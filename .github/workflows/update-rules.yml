@@ -121,3 +121,12 @@ jobs:
             -f target_url="$run_url" >/dev/null
 
           echo "已開 PR，測試狀態：$state"
+
+      # 必須排在開 PR 之後：PR 要先建立起來，才有地方看失敗詳情。
+      # 若省略這步，continue-on-error 會讓整個 run 在 Actions 列表上顯示為綠色，
+      # 測試失敗就只剩 PR 上的檢查標記能看見，容易被漏掉。
+      - name: 測試失敗時將 job 標記為失敗
+        if: steps.tests.outcome == 'failure'
+        run: |
+          echo '::error::新規則未通過測試，PR 已建立但請先確認影響再合併。'
+          exit 1
