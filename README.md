@@ -1,6 +1,6 @@
 # clear-url-api
 
-依 [ClearURLs](https://github.com/ClearURLs/Rules) 規則集移除網址追蹤碼的 API，可部署為 Express 伺服器或 Cloudflare Worker。
+依 [ClearURLs](https://github.com/ClearURLs/Rules) 規則集移除網址追蹤碼的 Cloudflare Worker。
 
 丟一個網址進來，回傳乾淨的網址：拿掉追蹤參數、聯盟行銷碼與站台專屬的追蹤片段；若是廣告轉址網址，直接解出它真正指向的目標。
 
@@ -39,28 +39,28 @@ Amazon      https://www.amazon.com/dp/B0123/ref=sr_1_1?qid=999&tag=aff-20
 
 ## API 使用方式
 
-> 以下以 Express 版本機 `http://localhost:3000` 為例。部署到 Cloudflare 後把 base URL 換成實際掛載路徑（例如 `https://example.com/api/clean-url`）即可，兩者的請求與回應格式相同。
+同一個端點以 method 區分單筆與批次。以下以本機 `wrangler dev`（`http://localhost:8787/api/clean-url`）為例；部署後換成實際網域即可。
 
-### `GET /clean`
+### `GET`
 
 | 參數  | 說明                        |
 | ----- | --------------------------- |
 | `url` | 要清理的網址（需 URL 編碼） |
 
 ```bash
-curl -s 'http://localhost:3000/clean?url=https%3A%2F%2Fexample.com%2Fp%3Fid%3D5%26utm_source%3Dnewsletter%26fbclid%3Dabc'
+curl -s 'http://localhost:8787/api/clean-url?url=https%3A%2F%2Fexample.com%2Fp%3Fid%3D5%26utm_source%3Dnewsletter%26fbclid%3Dabc'
 ```
 
 ```json
 { "url": "https://example.com/p?id=5" }
 ```
 
-### `POST /clean`
+### `POST`
 
 一次處理多個網址，回傳順序與輸入一致。
 
 ```bash
-curl -s -X POST http://localhost:3000/clean \
+curl -s -X POST http://localhost:8787/api/clean-url \
   -H 'Content-Type: application/json' \
   -d '{"urls":["https://www.amazon.com/dp/B0123/ref=sr_1_1?qid=999&tag=aff-20","https://www.google.com/url?q=https%3A%2F%2Fexample.org%2F%3Futm_medium%3Dcpc"]}'
 ```
@@ -75,49 +75,40 @@ curl -s -X POST http://localhost:3000/clean \
 - 錯誤一律 `4xx`，格式為 `{ "error": "訊息" }`。
 - 批次中的無效項目回傳空字串，不會讓整批失敗。
 - 整個網址本身即追蹤／廣告網址時回傳空字串，代表它沒有乾淨版本。
+- 掛載路徑以外的子路徑回 `404`，`GET`／`POST` 以外的 method 回 `405`。
 
 ### 限制
 
-| 項目             | 上限                |
-| ---------------- | ------------------- |
-| 單一網址長度     | 8192 字元           |
-| 單次批次數量     | 100 筆              |
-| 巢狀轉址展開層數 | 5 層                |
-| 速率限制         | 每 IP 每分鐘 120 次 |
+| 項目             | 上限      |
+| ---------------- | --------- |
+| 單一網址長度     | 8192 字元 |
+| 單次批次數量     | 100 筆    |
+| 巢狀轉址展開層數 | 5 層      |
+
+速率限制不在程式碼裡，由 Cloudflare WAF 負責——見下方「建議的節流設定」。
 
 ## 在本機跑起來
 
 ```bash
 npm install
-```
-
-Express 版（`http://localhost:3000`）：
-
-```bash
 npm run dev
 ```
 
-Cloudflare Worker 版（本機 workerd，`http://localhost:8787`）：
-
-```bash
-npm run worker:dev
-```
-
-兩者共用同一份清理邏輯與規則集，回應約定完全相同。
+`wrangler dev` 會在本機的 workerd 跑起真正的 Worker runtime，行為與線上一致。
 
 ## 部署到 Cloudflare Workers
 
-規則集會被 bundle 進 Worker（總計約 47 KB / gzip 11 KB），不需要 `nodejs_compat`。
+規則集會被 bundle 進 Worker（總計約 47 KB / gzip 11 KB），且整份程式碼不依賴任何 `node:` 內建模組，因此不需要 `nodejs_compat`，執行期相依為零。
 
 1. 編輯 `wrangler.jsonc`，把 `routes[].pattern` 與 `zone_name` 的 `example.com` 換成實際網域。若同時要調整掛載路徑，`vars.MOUNT_PATH` 必須跟著改成相同路徑。
 2. 確認該網域在 Cloudflare 上，且對應的 DNS 記錄是**代理狀態（橘雲）**——灰雲不會觸發 Worker 路由。若該網域沒有 origin 主機，建一筆代理狀態的 `AAAA` 指向 `100::` 即可。
 3. 部署：
 
 ```bash
-npm run worker:deploy
+npm run deploy
 ```
 
-`worker:deploy` 會先跑 `verify:rules`；規則檔的 sha256 對不上就中止，不會把來源不明的 regex 部署上線。
+`deploy` 會先跑 `verify:rules`；規則檔的 sha256 對不上就中止，不會把來源不明的 regex 部署上線。
 
 ### 建議的節流設定
 

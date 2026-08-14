@@ -8,8 +8,6 @@ export default defineConfig({
       provider: 'v8',
       include: ['src/**/*.ts'],
       exclude: [
-        // 只負責 listen，交由端對端驗證
-        'src/index.ts',
         // 只負責在模組層級組裝 handler，交由 wrangler dev 端對端驗證
         'src/worker/index.ts',
         // 純型別宣告，編譯後沒有任何執行期程式碼

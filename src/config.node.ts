@@ -1,13 +1,14 @@
 /**
- * 只有 Node（Express）版會用到的設定。Worker 版不會 import 這個模組。
+ * 規則檔在磁碟上的位置。
+ *
+ * 只有 build 時的驗證（scripts/verify-rules.ts → rules.loader.ts）會用到；
+ * Worker 執行期沒有檔案系統，規則是 bundle 進去的。
+ * 路徑可用環境變數覆寫，方便測試指向 fixture。
  */
 
 import path from 'node:path'
 
-/** src/config.node.ts 與編譯後的 dist/config.node.js 相對於專案根目錄的層級相同，故同一路徑兩種情境皆適用 */
 const defaultRulesPath = path.resolve(import.meta.dirname, '../data/rules.min.json')
-
-export const PORT = Number(process.env.PORT ?? 3000)
 
 export const RULES_PATH = process.env.RULES_PATH ?? defaultRulesPath
 

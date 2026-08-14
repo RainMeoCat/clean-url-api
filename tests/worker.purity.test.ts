@@ -44,9 +44,9 @@ describe('Worker 的 import graph', () => {
   })
 
   // 證明上面那條斷言不是因為偵測器失效才通過：
-  // Express 進入點確實會讀檔與算 hash，必須被偵測到。
-  it('偵測器有效——Express 進入點會被驗出 node: 依賴', () => {
-    expect(nodeBuiltinsReachableFrom('index.ts')).toEqual(
+  // build 時驗證用的 rules.loader 確實會讀檔與算 hash，必須被偵測到。
+  it('偵測器有效——rules.loader 會被驗出 node: 依賴', () => {
+    expect(nodeBuiltinsReachableFrom('services/rules.loader.ts')).toEqual(
       expect.arrayContaining(['node:crypto', 'node:fs', 'node:path'])
     )
   })

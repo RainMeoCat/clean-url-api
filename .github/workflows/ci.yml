@@ -19,7 +19,7 @@ jobs:
 
       - run: npm ci
 
-      # 規則檔的 sha256 驗證：Worker 版是 build 時 bundle 規則，
+      # 規則檔的 sha256 驗證：規則是 build 時 bundle 進 Worker 的，
       # 執行期沒有機會驗，所以壞掉的規則必須在這裡就擋下來
       - run: npm run verify:rules
 
@@ -28,5 +28,5 @@ jobs:
       - run: npm run typecheck
       - run: npm run test:coverage
 
-      # 確認 Worker 仍可 bundle（不部署）
-      - run: npx wrangler deploy --dry-run --outdir dist-worker
+      # 確認 Worker 仍可 bundle（dry-run，不部署）
+      - run: npm run build
