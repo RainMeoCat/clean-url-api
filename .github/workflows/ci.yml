@@ -1,0 +1,25 @@
+name: CI
+
+on: push
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: 格式、Lint、型別檢查與測試
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test:coverage
