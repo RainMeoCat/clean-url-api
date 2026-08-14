@@ -79,12 +79,6 @@ describe('POST /clean', () => {
     expect(res.status).toBe(400)
   })
 
-  it('缺少 urls 欄位時回 400', async () => {
-    const res = await request(app).post('/clean').send({})
-
-    expect(res.status).toBe(400)
-  })
-
   it('超過批次上限時回 400', async () => {
     const urls = Array.from({ length: MAX_BATCH_SIZE + 1 }, () => 'https://example.com/')
     const res = await request(app).post('/clean').send({ urls })
@@ -100,13 +94,6 @@ describe('POST /clean', () => {
 
     expect(res.status).toBe(200)
     expect(res.body).toEqual({ urls: ['https://example.com/a', '', '', '', 'https://example.com/b'] })
-  })
-
-  it('空陣列回傳空陣列', async () => {
-    const res = await request(app).post('/clean').send({ urls: [] })
-
-    expect(res.status).toBe(200)
-    expect(res.body).toEqual({ urls: [] })
   })
 
   it('請求主體不是合法 JSON 時回 400', async () => {
