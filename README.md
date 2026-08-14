@@ -35,7 +35,7 @@ Amazon      https://www.amazon.com/dp/B0123/ref=sr_1_1?qid=999&tag=aff-20
 
 轉址解析涵蓋 Google、Facebook、YouTube、Instagram、Messenger、Reddit、eBay、Steam、Tumblr、VK、DuckDuckGo、Pocket、Adjust 等平台，以及 AWIN、Admitad、Tradedoubler、Skimlinks、VigLink、digidip、href.li 等聯盟／短連結服務。解出的目標**會再被完整清理一次**，巢狀轉址最多解 5 層。
 
-規則由 `data/rules.min.json` 驅動，未寫死在程式碼中；每日排程會偵測上游更新並開 PR，合併後新規則即生效。詳見 [規則集與更新機制](https://github.com/RainMeoCat/clear-url-api/wiki/Rules-and-Updates)。
+規則由 `data/rules.min.json` 驅動，未寫死在程式碼中；要更新時執行 `npm run vendor` 重新抓取官方規則，確認 diff 與測試後 commit 即生效。詳見 [規則集與更新機制](https://github.com/RainMeoCat/clear-url-api/wiki/Rules-and-Updates)。
 
 ## API 使用方式
 
@@ -94,7 +94,7 @@ npm run dev
 
 ## 文件
 
-- [規則集與更新機制](https://github.com/RainMeoCat/clear-url-api/wiki/Rules-and-Updates) — 規則來源、sha256 驗證、每日自動開 PR 的流程
+- [規則集與更新機制](https://github.com/RainMeoCat/clear-url-api/wiki/Rules-and-Updates) — 規則來源、sha256 驗證、手動更新流程
 - [開發指引](https://github.com/RainMeoCat/clear-url-api/wiki/Development) — 指令、環境變數、編輯器設定、測試
 - [實作細節](https://github.com/RainMeoCat/clear-url-api/wiki/Implementation-Notes) — 清理演算法的處理順序與設計取捨
 

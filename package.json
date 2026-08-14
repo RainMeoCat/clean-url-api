@@ -20,7 +20,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "update-rules": "node scripts/update-rules.mjs"
+    "vendor": "bash scripts/vendor.sh"
   },
   "keywords": [
     "clearurls",

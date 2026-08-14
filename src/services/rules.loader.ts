@@ -82,7 +82,7 @@ export function loadRules(rulesPath: string = RULES_PATH, hashPath: string = RUL
   if (actual !== expected) {
     throw new RulesLoadError(
       `規則檔 sha256 與 ${hashPath} 不符，可能已損毀或遭竄改。\n  期望：${expected}\n  實際：${actual}\n` +
-        '  可執行 `npm run update-rules` 重新取得官方規則。'
+        '  可執行 `npm run vendor` 重新取得官方規則。'
     )
   }
 
