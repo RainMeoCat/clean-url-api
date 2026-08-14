@@ -1,7 +1,6 @@
 import type { NextFunction, Request, Response } from 'express'
 import { describe, expect, it, vi } from 'vitest'
-import { errorHandler, notFoundHandler } from '../src/middlewares/error.middleware.js'
-import { InvalidUrlError } from '../src/services/url.cleaner.js'
+import { errorHandler } from '../src/middlewares/error.middleware.js'
 
 function mockResponse() {
   const json = vi.fn()
@@ -11,34 +10,9 @@ function mockResponse() {
 
 const noop = (() => undefined) as unknown as NextFunction
 
-describe('notFoundHandler', () => {
-  it('回 404 並帶上方法與路徑', () => {
-    const { res, status, json } = mockResponse()
-    notFoundHandler({ method: 'GET', path: '/nope' } as Request, res)
-
-    expect(status).toHaveBeenCalledWith(404)
-    expect(json).toHaveBeenCalledWith({ error: '找不到 GET /nope' })
-  })
-})
-
+// 其餘的錯誤轉換（InvalidUrlError → 400、JSON 解析失敗 → 400、404）
+// 已由 clean.route.test.ts 透過真實的 Express 流程驗證，此處不重複。
 describe('errorHandler', () => {
-  it('InvalidUrlError 轉成 400', () => {
-    const { res, status, json } = mockResponse()
-    errorHandler(new InvalidUrlError('壞網址'), {} as Request, res, noop)
-
-    expect(status).toHaveBeenCalledWith(400)
-    expect(json).toHaveBeenCalledWith({ error: '壞網址' })
-  })
-
-  it('請求主體 JSON 解析失敗轉成 400', () => {
-    const { res, status, json } = mockResponse()
-    const error = Object.assign(new SyntaxError('Unexpected token'), { body: '{ broken' })
-    errorHandler(error, {} as Request, res, noop)
-
-    expect(status).toHaveBeenCalledWith(400)
-    expect(json).toHaveBeenCalledWith({ error: '請求主體不是合法的 JSON' })
-  })
-
   it('未預期的錯誤回 500，且不將內部細節洩漏給呼叫端', () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const { res, status, json } = mockResponse()
