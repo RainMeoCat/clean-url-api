@@ -1,6 +1,6 @@
 # clear-url-api
 
-依 [ClearURLs](https://github.com/ClearURLs/Rules) 規則集移除網址追蹤碼的 Express API。
+依 [ClearURLs](https://github.com/ClearURLs/Rules) 規則集移除網址追蹤碼的 API，可部署為 Express 伺服器或 Cloudflare Worker。
 
 丟一個網址進來，回傳乾淨的網址：拿掉追蹤參數、聯盟行銷碼與站台專屬的追蹤片段；若是廣告轉址網址，直接解出它真正指向的目標。
 
@@ -39,7 +39,7 @@ Amazon      https://www.amazon.com/dp/B0123/ref=sr_1_1?qid=999&tag=aff-20
 
 ## API 使用方式
 
-> 目前尚未部署，以下以本機 `http://localhost:3000` 為例。部署後把 base URL 換掉即可。
+> 以下以 Express 版本機 `http://localhost:3000` 為例。部署到 Cloudflare 後把 base URL 換成實際掛載路徑（例如 `https://example.com/api/clean-url`）即可，兩者的請求與回應格式相同。
 
 ### `GET /clean`
 
@@ -89,8 +89,48 @@ curl -s -X POST http://localhost:3000/clean \
 
 ```bash
 npm install
+```
+
+Express 版（`http://localhost:3000`）：
+
+```bash
 npm run dev
 ```
+
+Cloudflare Worker 版（本機 workerd，`http://localhost:8787`）：
+
+```bash
+npm run worker:dev
+```
+
+兩者共用同一份清理邏輯與規則集，回應約定完全相同。
+
+## 部署到 Cloudflare Workers
+
+規則集會被 bundle 進 Worker（總計約 47 KB / gzip 11 KB），不需要 `nodejs_compat`。
+
+1. 編輯 `wrangler.jsonc`，把 `routes[].pattern` 與 `zone_name` 的 `example.com` 換成實際網域。若同時要調整掛載路徑，`vars.MOUNT_PATH` 必須跟著改成相同路徑。
+2. 確認該網域在 Cloudflare 上，且對應的 DNS 記錄是**代理狀態（橘雲）**——灰雲不會觸發 Worker 路由。若該網域沒有 origin 主機，建一筆代理狀態的 `AAAA` 指向 `100::` 即可。
+3. 部署：
+
+```bash
+npm run worker:deploy
+```
+
+`worker:deploy` 會先跑 `verify:rules`；規則檔的 sha256 對不上就中止，不會把來源不明的 regex 部署上線。
+
+### 建議的節流設定
+
+Worker 本身不做速率限制——WAF 的 Rate Limiting Rules 跑在 Worker **之前**，被擋下的請求不計入 Worker 用量，成本與防護都更好。建議在 Cloudflare dashboard（Security → WAF → Rate limiting rules）設定：
+
+| 條件                                                   | 上限         | 動作  |
+| ------------------------------------------------------ | ------------ | ----- |
+| `starts_with(http.request.uri.path, "/api/clean-url")` | 120 次／分鐘 | Block |
+| 同上且 `http.request.method eq "POST"`                 | 20 次／分鐘  | Block |
+
+POST 單次可帶 100 個網址，成本是 GET 的 100 倍，因此配額要獨立且更嚴。動作請選 **Block**，不要用 Managed Challenge——API 用戶端不會解 challenge。
+
+`wrangler.jsonc` 另外設了 `limits.cpu_ms`，讓惡意輸入最多只燒掉自己那一個請求的 CPU 預算（付費方案適用，免費方案請移除該段）。
 
 ## 文件
 

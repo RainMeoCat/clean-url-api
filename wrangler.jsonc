@@ -1,0 +1,38 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "clear-url-api",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-08-01",
+
+  // 規則集與清理邏輯都不碰 node: 內建模組（由 tests/worker.purity.test.ts 守著），
+  // 因此不需要 nodejs_compat，bundle 更小也少一層相容層。
+
+  // 走自訂網域的 route，不開 *.workers.dev：
+  // WAF、Rate Limiting Rules、Cache Rules 都只作用在 zone 上，
+  // workers.dev 網域等於一個繞過所有防護的後門。
+  "workers_dev": false,
+  "routes": [
+    {
+      // 部署前把 example.com 換成實際網域。結尾的 * 不可省略——
+      // 不帶萬用字元的模式遇到查詢字串時匹配行為不可靠，而 GET 一定帶 ?url=
+      "pattern": "example.com/api/clean-url*",
+      "zone_name": "example.com",
+    },
+  ],
+
+  // handler 用這個值把 route 的 * 收斂成單一端點；改 route 時要一起改
+  "vars": {
+    "MOUNT_PATH": "/api/clean-url",
+  },
+
+  // 單一請求的 CPU 上限。正常請求用不到 1 ms，設低是為了讓惡意輸入
+  // （例如觸發規則 regex catastrophic backtracking）只燒掉自己那一個請求。
+  // 註：付費方案才可調整，免費方案請移除這段。
+  "limits": {
+    "cpu_ms": 50,
+  },
+
+  "observability": {
+    "enabled": true,
+  },
+}

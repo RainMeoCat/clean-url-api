@@ -1,6 +1,8 @@
 node_modules
 dist
+dist-worker
 coverage
+.wrangler
 package-lock.json
 
 # ClearURLs 上游規則集：為壓縮過的產物，不可重新格式化（會使 sha256 驗證失敗）
