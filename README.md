@@ -50,6 +50,67 @@ curl -s -X POST http://localhost:3000/clean \
 | 巢狀轉址展開層數 | 5 層                |
 | 速率限制         | 每 IP 每分鐘 120 次 |
 
+## 支援的清理能力
+
+不只移除查詢字串裡的追蹤參數。規則集共 206 個 provider，涵蓋以下五類能力（括號內為實際覆蓋的 provider 數，已扣除規則集自帶的 7 個測試用 provider）：
+
+| 能力                          | 覆蓋 | 作用                                               |
+| ----------------------------- | ---- | -------------------------------------------------- |
+| `rules` — 查詢參數移除        | 142  | 移除 `utm_*`、`fbclid`、`gclid`、`ref` 等追蹤參數  |
+| `redirections` — 轉址解析     | 56   | 從轉址網址中解出真正的目標，並遞迴清理該目標       |
+| `rawRules` — 網址片段移除     | 4    | 移除**路徑或 fragment** 中的追蹤片段，不限查詢字串 |
+| `referralMarketing` — 聯盟碼  | 7    | 移除聯盟行銷參數                                   |
+| `completeProvider` — 整體封鎖 | 8    | 整個網址本身即廣告／追蹤器，回傳空字串             |
+| `exceptions` — 例外豁免       | 15   | 命中即略過該 provider，避免把功能性網址清壞        |
+
+### 轉址解析
+
+涵蓋 Google、Facebook、YouTube、Instagram、Messenger、Reddit、eBay、Steam、Tumblr、VK、DuckDuckGo、Pocket、Adjust 等平台，以及 AWIN、Admitad、Tradedoubler、Skimlinks、VigLink、digidip、href.li 等聯盟／短連結轉址服務。
+
+```
+https://www.google.com/url?q=https%3A%2F%2Fexample.org%2Fpage%3Futm_source%3Dserp&sa=U&ved=2ahUKEwj
+→ https://example.org/page
+
+https://l.facebook.com/l.php?u=https%3A%2F%2Fexample.org%2Fpost%3Ffbclid%3Dabc&h=AT1x
+→ https://example.org/post
+
+https://duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.org%2Fdoc&rut=abcdef
+→ https://example.org/doc
+
+https://www.awin1.com/cread.php?awinmid=1&ued=https%3A%2F%2Fshop.example%2Fitem%3Futm_source%3Daff
+→ https://shop.example/item
+```
+
+解出來的目標**會再被完整清理一次**——上面第一筆解開後的 `?utm_source=serp` 也一併移除了。巢狀轉址同樣能一路解到底（上限 5 層）：
+
+```
+https://href.li/?https://vk.com/away.php?to=https%3A%2F%2Fexample.org%2F%3Futm_source%3Ddeep
+→ https://example.org/
+```
+
+### 其他能力
+
+```
+# rawRules：清掉路徑與 fragment 中的追蹤片段
+https://www.amazon.com/dp/B0123/ref=sr_1_1?qid=999&tag=aff-20&ascsubtag=xyz
+→ https://www.amazon.com/dp/B0123
+
+https://pantip.com/topic/12345#lead_tracking
+→ https://pantip.com/topic/12345
+
+# completeProvider：整個網址即廣告請求，沒有乾淨版本
+https://pagead2.googlesyndication.com/pagead/ads?client=ca-pub-1
+→ ""
+
+# exceptions：Amazon 的購物車／API 網址屬例外，只套用 globalRules，tag 保留
+https://www.amazon.com/gp/redirector.html?tag=aff-20&utm_source=x
+→ https://www.amazon.com/gp/redirector.html?tag=aff-20
+```
+
+最後一項容易被忽略但很重要：若沒有 `exceptions`，購物車 API、登入回呼這類網址會被清到壞掉。
+
+以上全部由規則集驅動，**沒有寫死在程式碼裡**。每日更新的 PR 一合併，新增的轉址服務與追蹤參數就自動生效，不需要改動任何程式碼。
+
 ## 規則集
 
 規則檔 `data/rules.min.json` 直接進版控，服務啟動時從磁碟載入，**執行期不對外連線**，因此可離線啟動、部署時也不需要任何額外步驟。
@@ -117,7 +178,7 @@ npm run dev
 
 需安裝 `esbenp.prettier-vscode` 與 `dbaeumer.vscode-eslint`（已列於 `.vscode/extensions.json`）。
 
-## 清理邏輯
+## 實作細節
 
 每個 provider 依序處理：`exceptions` → `redirections` → `completeProvider` → `rawRules` → `rules`。
 
