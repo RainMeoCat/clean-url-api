@@ -1,0 +1,71 @@
+name: Update ClearURLs rules
+
+on:
+  schedule:
+    # 每日 UTC 03:17（台北時間 11:17）
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    name: 偵測上游規則更新並開 PR
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # 腳本零相依，不需要 npm install
+      - name: 下載並以 sha256 驗證上游規則
+        run: node scripts/update-rules.mjs
+
+      - name: 有變更則開 PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet -- data/; then
+            echo "規則無變更，結束。"
+            exit 0
+          fi
+
+          hash8="$(cut -c1-8 data/rules.hash)"
+          branch="chore/clearurls-rules-${hash8}"
+
+          # 同一個上游版本只開一次 PR，避免每日重複
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            echo "分支 $branch 已存在，代表這個版本的 PR 已經開過，結束。"
+            exit 0
+          fi
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          git switch -c "$branch"
+          git add data/
+          git commit -m "chore: update ClearURLs rules to ${hash8}"
+          git push -u origin "$branch"
+
+          body="$(cat <<EOF
+          上游 [ClearURLs/Rules](https://github.com/ClearURLs/Rules) 規則集有更新。
+
+          - 來源：官方發佈的 \`data.minify.json\`
+          - sha256：\`$(cat data/rules.hash)\`
+          - 已於 workflow 中通過 sha256 驗證與結構檢查
+
+          此 PR 由排程 workflow 自動建立，合併後重新部署即生效。
+          EOF
+          )"
+
+          gh pr create \
+            --base main \
+            --head "$branch" \
+            --title "chore: update ClearURLs rules (${hash8})" \
+            --body "$body"
