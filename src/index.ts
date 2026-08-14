@@ -1,5 +1,5 @@
 import { createApp } from './app.js'
-import { PORT, RULES_PATH } from './config.js'
+import { PORT, RULES_PATH } from './config.node.js'
 import { loadRules } from './services/rules.loader.js'
 import type { CompiledProvider } from './types/clearurls.js'
 

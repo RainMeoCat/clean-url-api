@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest'
-import { compileRuleSet, loadRules } from '../src/services/rules.loader.js'
+import { compileRuleSet } from '../src/services/rules.compiler.js'
+import { loadRules } from '../src/services/rules.loader.js'
 import { InvalidUrlError, cleanUrl } from '../src/services/url.cleaner.js'
 import type { CompiledProvider } from '../src/types/clearurls.js'
 

@@ -1,18 +1,15 @@
-import path from 'node:path'
-
-/** src/config.ts 與編譯後的 dist/config.js 相對於專案根目錄的層級相同，故同一路徑兩種情境皆適用 */
-const defaultRulesPath = path.resolve(import.meta.dirname, '../data/rules.min.json')
-
-export const PORT = Number(process.env.PORT ?? 3000)
-
-export const RULES_PATH = process.env.RULES_PATH ?? defaultRulesPath
-
-export const RULES_HASH_PATH = process.env.RULES_HASH_PATH ?? path.join(path.dirname(RULES_PATH), 'rules.hash')
+/**
+ * 與執行環境無關的常數。
+ *
+ * 這個模組刻意不 import 任何 node: 模組——它被 Worker 版的進入點一路引用到
+ * url.cleaner，而 Workers 沒有檔案系統。需要磁碟路徑或 process.env 的設定請放
+ * config.node.ts。
+ */
 
 /** 單一網址長度上限，避免對超長輸入套用整組 regex */
 export const MAX_URL_LENGTH = 8192
 
-/** POST /clean 單次可處理的網址數量上限 */
+/** 單次批次可處理的網址數量上限 */
 export const MAX_BATCH_SIZE = 100
 
 /** 巢狀轉址的展開層數上限，防止惡意構造的無限轉址 */
