@@ -13,10 +13,10 @@
   "workers_dev": false,
   "routes": [
     {
-      // 部署前把 example.com 換成實際網域。結尾的 * 不可省略——
-      // 不帶萬用字元的模式遇到查詢字串時匹配行為不可靠，而 GET 一定帶 ?url=
-      "pattern": "example.com/api/clean-url*",
-      "zone_name": "example.com",
+      // 結尾的 * 不可省略——不帶萬用字元的模式遇到查詢字串時
+      // 匹配行為不可靠，而 GET 一定帶 ?url=
+      "pattern": "rainmeocat.com/api/clean-url*",
+      "zone_name": "rainmeocat.com",
     },
   ],
 

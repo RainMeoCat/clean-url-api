@@ -39,7 +39,7 @@ Amazon      https://www.amazon.com/dp/B0123/ref=sr_1_1?qid=999&tag=aff-20
 
 ## API 使用方式
 
-同一個端點以 method 區分單筆與批次。以下以本機 `wrangler dev`（`http://localhost:8787/api/clean-url`）為例；部署後換成實際網域即可。
+同一個端點以 method 區分單筆與批次。線上位址是 `https://rainmeocat.com/api/clean-url`；以下範例以本機 `wrangler dev`（`http://localhost:8787/api/clean-url`）為主，換成線上網域即可。
 
 ### `GET`
 
@@ -100,7 +100,7 @@ npm run dev
 
 規則集會被 bundle 進 Worker（總計約 47 KB / gzip 11 KB）。Worker 可達的所有模組都不 import `node:` 內建模組——`node:fs`／`node:crypto` 只出現在 build 時的規則驗證，不會被 bundle 進去——因此不需要 `nodejs_compat`，執行期相依為零。
 
-1. 編輯 `wrangler.jsonc`，把 `routes[].pattern` 與 `zone_name` 的 `example.com` 換成實際網域。若同時要調整掛載路徑，`vars.MOUNT_PATH` 必須跟著改成相同路徑。
+1. `wrangler.jsonc` 目前掛在 `rainmeocat.com/api/clean-url`。換網域時改 `routes[].pattern` 與 `zone_name`；換掛載路徑時，`vars.MOUNT_PATH` 必須跟著改成相同路徑。
 2. 確認該網域在 Cloudflare 上，且對應的 DNS 記錄是**代理狀態（橘雲）**——灰雲不會觸發 Worker 路由。若該網域沒有 origin 主機，建一筆代理狀態的 `AAAA` 指向 `100::` 即可。
 3. 部署：
 
