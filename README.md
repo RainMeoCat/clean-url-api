@@ -46,11 +46,10 @@ Threads      https://www.threads.com/share/Fp3agZKiy/
 
 - 只有明確命中白名單樣式的網址會觸發外部請求，其餘網址一律純字串處理、不連外。
 - 展開失敗（查無短碼、逾時、目標跳出白名單）不算錯誤，會回退成只做字串清理並照樣回 `200`。
-- 批次一次最多展開 10 個，超出的項目只做字串清理。
 
 ## API 使用方式
 
-同一個端點以 method 區分單筆與批次。線上位址是 `https://rainmeocat.com/api/clean-url`；以下範例以本機 `wrangler dev`（`http://localhost:8787/api/clean-url`）為主，換成線上網域即可。
+一次接收一個網址、回傳一個網址，只支援 `GET`。線上位址是 `https://rainmeocat.com/api/clean-url`；以下範例以本機 `wrangler dev`（`http://localhost:8787/api/clean-url`）為主，換成線上網域即可。
 
 ### `GET`
 
@@ -66,37 +65,20 @@ curl -s 'http://localhost:8787/api/clean-url?url=https%3A%2F%2Fexample.com%2Fp%3
 { "url": "https://example.com/p?id=5" }
 ```
 
-### `POST`
-
-一次處理多個網址，回傳順序與輸入一致。
-
-```bash
-curl -s -X POST http://localhost:8787/api/clean-url \
-  -H 'Content-Type: application/json' \
-  -d '{"urls":["https://www.amazon.com/dp/B0123/ref=sr_1_1?qid=999&tag=aff-20","https://www.google.com/url?q=https%3A%2F%2Fexample.org%2F%3Futm_medium%3Dcpc"]}'
-```
-
-```json
-{ "urls": ["https://www.amazon.com/dp/B0123", "https://example.org/"] }
-```
-
 ### 回應約定
 
 - 成功一律 `200`，只回傳清理後的字串，不附帶比對細節。
 - 錯誤一律 `4xx`，格式為 `{ "error": "訊息" }`。
-- 批次中的無效項目回傳空字串，不會讓整批失敗。
 - 整個網址本身即追蹤／廣告網址時回傳空字串，代表它沒有乾淨版本。
-- 掛載路徑以外的子路徑回 `404`，`GET`／`POST` 以外的 method 回 `405`。
+- 掛載路徑以外的子路徑回 `404`，`GET` 以外的 method 回 `405`（帶 `Allow: GET`）。
 
 ### 限制
 
-| 項目                 | 上限      |
-| -------------------- | --------- |
-| 單一網址長度         | 8192 字元 |
-| 單次批次數量         | 100 筆    |
-| 巢狀轉址展開層數     | 5 層      |
-| 單次批次展開短連結數 | 10 個     |
-| 短連結展開逾時       | 3 秒      |
+| 項目             | 上限      |
+| ---------------- | --------- |
+| 單一網址長度     | 8192 字元 |
+| 巢狀轉址展開層數 | 5 層      |
+| 短連結展開逾時   | 3 秒      |
 
 速率限制不在程式碼裡，由 Cloudflare WAF 負責——見下方「建議的節流設定」。
 
@@ -148,9 +130,8 @@ Worker 本身不做速率限制——WAF 的 Rate Limiting Rules 跑在 Worker *
 | 條件                                                   | 上限         | 動作  |
 | ------------------------------------------------------ | ------------ | ----- |
 | `starts_with(http.request.uri.path, "/api/clean-url")` | 120 次／分鐘 | Block |
-| 同上且 `http.request.method eq "POST"`                 | 20 次／分鐘  | Block |
 
-POST 單次可帶 100 個網址，成本是 GET 的 100 倍，因此配額要獨立且更嚴。動作請選 **Block**，不要用 Managed Challenge——API 用戶端不會解 challenge。
+每個請求成本固定（一個網址、最多一次短連結展開），因此單一配額就夠。動作請選 **Block**，不要用 Managed Challenge——API 用戶端不會解 challenge。
 
 `wrangler.jsonc` 不設 `limits.cpu_ms`——該欄位僅付費方案可調，免費方案沿用平台預設的 10 ms CPU 上限。升級付費方案後可加回去，讓惡意輸入最多只燒掉自己那一個請求的 CPU 預算。
 

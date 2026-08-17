@@ -1,4 +1,4 @@
-import { createBatchCleaner, createBatchExpander, validateBatch, validateSingleUrl } from '../services/clean.service.js'
+import { validateSingleUrl } from '../services/clean.service.js'
 import { InvalidUrlError, cleanUrl } from '../services/url.cleaner.js'
 import type { ShortLinkExpander } from '../services/shortlink.expander.js'
 import type { CompiledProvider } from '../types/clearurls.js'
@@ -31,9 +31,6 @@ function isMountPath(pathname: string, mountPath: string): boolean {
  * 模組本身不做任何取得依賴的 side effect。
  */
 export function createFetchHandler(providers: CompiledProvider[], expander: ShortLinkExpander) {
-  const cleanOrEmpty = createBatchCleaner(providers)
-  const expandBatch = createBatchExpander(expander)
-
   async function cleanOne(req: Request): Promise<Response> {
     const validation = validateSingleUrl(new URL(req.url).searchParams.get('url'))
 
@@ -56,23 +53,6 @@ export function createFetchHandler(providers: CompiledProvider[], expander: Shor
     }
   }
 
-  async function cleanMany(req: Request): Promise<Response> {
-    let body: unknown
-    try {
-      body = await req.json()
-    } catch {
-      return json(400, { error: '請求主體不是合法的 JSON' })
-    }
-
-    const validation = validateBatch((body as { urls?: unknown } | null)?.urls)
-
-    if (!validation.ok) {
-      return json(400, { error: validation.error })
-    }
-
-    return json(200, { urls: (await expandBatch(validation.value)).map(cleanOrEmpty) })
-  }
-
   return async function handleRequest(req: Request, env: WorkerEnv): Promise<Response> {
     const { pathname } = new URL(req.url)
 
@@ -84,10 +64,6 @@ export function createFetchHandler(providers: CompiledProvider[], expander: Shor
       return cleanOne(req)
     }
 
-    if (req.method === 'POST') {
-      return cleanMany(req)
-    }
-
-    return json(405, { error: `不支援 ${req.method}` }, { allow: 'GET, POST' })
+    return json(405, { error: `不支援 ${req.method}` }, { allow: 'GET' })
   }
 }

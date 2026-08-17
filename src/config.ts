@@ -11,9 +11,6 @@
 /** 單一網址長度上限，避免對超長輸入套用整組 regex */
 export const MAX_URL_LENGTH = 8192
 
-/** 單次批次可處理的網址數量上限 */
-export const MAX_BATCH_SIZE = 100
-
 /** 巢狀轉址的展開層數上限，防止惡意構造的無限轉址 */
 export const MAX_REDIRECTION_DEPTH = 5
 
@@ -25,13 +22,6 @@ export const SHORTLINK_TIMEOUT_MS = 3000
  * 需要 2 是因為 threads.net 會先 301 到 threads.com 的同一個短碼，第二跳才是真正的目標。
  */
 export const MAX_SHORTLINK_HOPS = 2
-
-/**
- * 單次批次最多展開幾個短連結。
- * 每次展開都是一個 subrequest（免費方案每請求 50 個），也各自是一次外部往返，
- * 不設上限的話一批 100 個短連結會同時打爆額度與延遲。超出的項目只做字串清理。
- */
-export const MAX_BATCH_EXPANSIONS = 10
 
 /**
  * 展開短連結時送出的 User-Agent。

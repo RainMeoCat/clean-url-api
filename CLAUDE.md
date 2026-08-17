@@ -98,17 +98,18 @@ ClearURLs 的 `redirections` 只能處理「目標已內嵌在網址裡」的轉
 - 用 `GET` 而非 `HEAD`：轉址回應 body 本來就 0 bytes，成本相同但相容性較好。
 - **展開失敗一律回 `null` 而非拋錯**，呼叫端沿用原網址繼續清理。外部服務的狀態不該決定這個 API 的成敗。
 
-批次的展開上限（`MAX_BATCH_EXPANSIONS`）在 `clean.service.ts`，那裡是批次語意的所在。目前沒有做快取——Threads 回 `cache-control: private, no-cache`，要快取得自己用 Cache API，有量再說。
+一個請求最多展開一次（API 只接收一個網址），所以沒有展開數量的上限要管。目前也沒有做快取——Threads 回 `cache-control: private, no-cache`，要快取得自己用 Cache API，有量再說。
 
 ### 錯誤與回應約定
 
-`src/services/clean.service.ts` 定義請求驗證與批次語意——錯誤訊息與「什麼算不合法」都在這裡，`worker/handler.ts` 只負責轉成 `Response`。要改訊息或上限就改這個檔案。
+`src/services/clean.service.ts` 定義請求驗證——錯誤訊息與「什麼算不合法」都在這裡，`worker/handler.ts` 只負責轉成 `Response`。要改訊息或上限就改這個檔案。
 
-- 成功一律 200，只回清理後的字串（`{ url }` / `{ urls }`），不附比對細節。
+**這個 API 只接收一個網址、回傳一個網址**，唯一的入口是 `GET ?url=`。批次（`POST { urls: [...] }`）已刻意移除：單一網址用查詢參數就夠，多一條入口就多一組驗證路徑與成本模型要維護。要重新加回批次前，先確認呼叫端真的無法自己發 N 個請求。
+
+- 成功一律 200，只回清理後的字串（`{ url }`），不附比對細節。
 - 錯誤一律 4xx，格式 `{ "error": "訊息" }`。
 - `completeProvider` 命中回空字串，代表該網址沒有乾淨版本——這不是錯誤。
-- 批次中的無效項目回空字串，不讓整批失敗。
-- 掛載路徑以外的子路徑回 404，非 GET/POST 回 405（帶 `Allow` 標頭）。
+- 掛載路徑以外的子路徑回 404，非 GET 回 405（帶 `Allow: GET`）。
 
 ### 掛載路徑與節流
 
@@ -120,7 +121,7 @@ ClearURLs 的 `redirections` 只能處理「目標已內嵌在網址裡」的轉
 
 ### 設定
 
-所有上限集中在 `src/config.ts`（`MAX_URL_LENGTH`、`MAX_BATCH_SIZE`、`MAX_REDIRECTION_DEPTH`、`SHORTLINK_TIMEOUT_MS`、`MAX_SHORTLINK_HOPS`、`MAX_BATCH_EXPANSIONS`、`SHORTLINK_USER_AGENT`）。`src/config.node.ts` 只有規則檔路徑（`RULES_PATH`、`RULES_HASH_PATH`，可用同名環境變數覆寫，測試以此指向 fixture）。
+所有上限集中在 `src/config.ts`（`MAX_URL_LENGTH`、`MAX_REDIRECTION_DEPTH`、`SHORTLINK_TIMEOUT_MS`、`MAX_SHORTLINK_HOPS`、`SHORTLINK_USER_AGENT`）。`src/config.node.ts` 只有規則檔路徑（`RULES_PATH`、`RULES_HASH_PATH`，可用同名環境變數覆寫，測試以此指向 fixture）。
 
 ## 慣例
 

@@ -39,32 +39,42 @@ function createFakeFetch(routes: Record<string, string | number>) {
 function expanderFor(routes: Record<string, string | number>) {
   const { impl, calls } = createFakeFetch(routes)
   const expander = createShortLinkExpander(SHORT_LINK_PROVIDERS, impl)
-  return { expand: (url: string) => expander.expand(url), matches: (url: string) => expander.matches(url), calls }
+  return { expand: (url: string) => expander.expand(url), calls }
 }
 
-describe('createShortLinkExpander — matches', () => {
-  it('認得 threads 的 /share/ 短連結', () => {
-    const { matches } = expanderFor({})
+/**
+ * 白名單樣式是本專案唯一的 SSRF 邊界，因此這裡驗的不只是「回 null」，
+ * 而是「連請求都沒發出去」——calls 為空才能證明不合樣式的網址
+ * 不可能被拿去打任何位址。
+ */
+describe('createShortLinkExpander — 只有命中樣式的網址會被 fetch', () => {
+  it('認得 threads 的 /share/ 短連結（含無尾斜線與 threads.net）', async () => {
+    const noSlash = 'https://www.threads.com/share/Fp3agZKiy'
+    const netUrl = 'https://threads.net/share/Fp3agZKiy/'
+    const { expand, calls } = expanderFor({ [SHARE_URL]: TARGET_URL, [noSlash]: TARGET_URL, [netUrl]: TARGET_URL })
 
-    expect(matches(SHARE_URL)).toBe(true)
-    expect(matches('https://www.threads.com/share/Fp3agZKiy')).toBe(true)
-    expect(matches('https://threads.net/share/Fp3agZKiy/')).toBe(true)
+    expect(await expand(SHARE_URL)).toBe(TARGET_URL)
+    expect(await expand(noSlash)).toBe(TARGET_URL)
+    expect(await expand(netUrl)).toBe(TARGET_URL)
+    expect(calls.map(({ url }) => url)).toEqual([SHARE_URL, noSlash, netUrl])
   })
 
-  it('不把一般 threads 貼文或其他網站當成短連結', () => {
-    const { matches } = expanderFor({})
+  it('一般 threads 貼文、其他網站、缺短碼的路徑都不發請求', async () => {
+    const { expand, calls } = expanderFor({})
 
-    expect(matches(TARGET_URL)).toBe(false)
-    expect(matches('https://example.com/share/abc/')).toBe(false)
-    expect(matches('https://www.threads.com/share/')).toBe(false)
+    expect(await expand(TARGET_URL)).toBeNull()
+    expect(await expand('https://example.com/share/abc/')).toBeNull()
+    expect(await expand('https://www.threads.com/share/')).toBeNull()
+    expect(calls).toEqual([])
   })
 
-  it('不接受夾帶額外路徑或查詢字串的偽短連結', () => {
-    const { matches } = expanderFor({})
+  it('夾帶額外路徑、查詢字串或偽造網域的假短連結都不發請求', async () => {
+    const { expand, calls } = expanderFor({})
 
-    expect(matches('https://www.threads.com/share/abc/../../evil')).toBe(false)
-    expect(matches('https://www.threads.com/share/abc?next=https://evil.example')).toBe(false)
-    expect(matches('https://www.threads.com.evil.example/share/abc/')).toBe(false)
+    expect(await expand('https://www.threads.com/share/abc/../../evil')).toBeNull()
+    expect(await expand('https://www.threads.com/share/abc?next=https://evil.example')).toBeNull()
+    expect(await expand('https://www.threads.com.evil.example/share/abc/')).toBeNull()
+    expect(calls).toEqual([])
   })
 })
 

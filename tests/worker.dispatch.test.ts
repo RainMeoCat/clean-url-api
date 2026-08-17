@@ -6,7 +6,7 @@ import { createFetchHandler, type WorkerEnv } from '../src/worker/handler.js'
 const env: WorkerEnv = { MOUNT_PATH: '/api/clean-url' }
 
 /** 這組測試只關心路由分派，不涉及短連結展開 */
-const noExpansion: ShortLinkExpander = { matches: () => false, expand: () => Promise.resolve(null) }
+const noExpansion: ShortLinkExpander = { expand: () => Promise.resolve(null) }
 
 let handle: (req: Request, env: WorkerEnv) => Promise<Response>
 
@@ -51,7 +51,22 @@ describe('Worker method 分派', () => {
     const res = await handle(new Request('https://example.com/api/clean-url', { method: 'DELETE' }), env)
 
     expect(res.status).toBe(405)
-    expect(res.headers.get('allow')).toBe('GET, POST')
+    expect(res.headers.get('allow')).toBe('GET')
+  })
+
+  // 這個 API 只接收一個網址、回傳一個網址，查詢參數就夠了，POST 沒有存在的理由
+  it('POST 回 405', async () => {
+    const res = await handle(
+      new Request('https://example.com/api/clean-url', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ url: 'https://example.com/p?utm_source=x' }),
+      }),
+      env
+    )
+
+    expect(res.status).toBe(405)
+    expect(res.headers.get('allow')).toBe('GET')
   })
 
   it('回應為 application/json', async () => {

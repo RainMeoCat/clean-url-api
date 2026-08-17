@@ -62,9 +62,13 @@ function resolveTarget(location: string, current: string, provider: ShortLinkPro
 }
 
 export interface ShortLinkExpander {
-  /** 是否為需要對外發請求才能展開的短連結；批次要據此限制展開數量 */
-  matches(url: string): boolean
-  /** 展開後的網址；不是短連結或展開失敗時為 null */
+  /**
+   * 展開後的網址；不是短連結或展開失敗時為 null。
+   *
+   * 「是不是短連結」刻意不另外開一個 matches()：呼叫端一律無條件呼叫 expand()，
+   * 由這裡的 provider 判斷決定要不要發請求。少一個公開判斷式，就少一個
+   * 「先問過再展開」與「直接展開」判斷不一致的機會。
+   */
   expand(url: string): Promise<string | null>
 }
 
@@ -133,5 +137,5 @@ export function createShortLinkExpander(
     return null
   }
 
-  return { matches: (url) => providerFor(url) !== undefined, expand }
+  return { expand }
 }
