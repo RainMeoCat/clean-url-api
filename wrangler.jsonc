@@ -18,6 +18,13 @@
       "pattern": "rainmeocat.com/api/clean-url*",
       "zone_name": "rainmeocat.com",
     },
+    {
+      // apex 與 www 是兩個獨立主機，route 不會互相涵蓋。origin（Vercel）
+      // 把 apex 308 轉到 www，網站主體在 www，因此兩個都要掛，
+      // 否則打 www 的請求會落回 SPA 的 index.html 而不是這個 API。
+      "pattern": "www.rainmeocat.com/api/clean-url*",
+      "zone_name": "rainmeocat.com",
+    },
   ],
 
   // handler 用這個值把 route 的 * 收斂成單一端點；改 route 時要一起改

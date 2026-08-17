@@ -100,7 +100,7 @@ npm run dev
 
 規則集會被 bundle 進 Worker（總計約 47 KB / gzip 11 KB）。Worker 可達的所有模組都不 import `node:` 內建模組——`node:fs`／`node:crypto` 只出現在 build 時的規則驗證，不會被 bundle 進去——因此不需要 `nodejs_compat`，執行期相依為零。
 
-1. `wrangler.jsonc` 目前掛在 `rainmeocat.com/api/clean-url`。換網域時改 `routes[].pattern` 與 `zone_name`；換掛載路徑時，`vars.MOUNT_PATH` 必須跟著改成相同路徑。
+1. `wrangler.jsonc` 目前掛在 `rainmeocat.com/api/clean-url`（apex 與 `www` 各一筆 route——兩者是獨立主機，route 不會互相涵蓋）。換網域時改 `routes[].pattern` 與 `zone_name`；換掛載路徑時，`vars.MOUNT_PATH` 必須跟著改成相同路徑。
 2. 確認該網域在 Cloudflare 上，且對應的 DNS 記錄是**代理狀態（橘雲）**——灰雲不會觸發 Worker 路由。若該網域沒有 origin 主機，建一筆代理狀態的 `AAAA` 指向 `100::` 即可。
 3. 部署：
 
