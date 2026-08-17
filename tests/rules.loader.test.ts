@@ -6,7 +6,7 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { RulesLoadError } from '../src/services/rules.compiler.js'
 import { loadRules } from '../src/services/rules.loader.js'
 
-const workDir = mkdtempSync(path.join(tmpdir(), 'clear-url-api-'))
+const workDir = mkdtempSync(path.join(tmpdir(), 'clean-url-api-'))
 
 afterAll(() => {
   rmSync(workDir, { recursive: true, force: true })

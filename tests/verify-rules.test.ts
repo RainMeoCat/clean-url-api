@@ -9,7 +9,7 @@ const projectRoot = path.resolve(import.meta.dirname, '..')
 const scriptPath = path.join(projectRoot, 'scripts/verify-rules.ts')
 const tsxPath = path.join(projectRoot, 'node_modules/.bin/tsx')
 
-const workDir = mkdtempSync(path.join(tmpdir(), 'clear-url-api-verify-'))
+const workDir = mkdtempSync(path.join(tmpdir(), 'clean-url-api-verify-'))
 
 afterAll(() => {
   rmSync(workDir, { recursive: true, force: true })

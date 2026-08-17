@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "clear-url-api",
+  "name": "clean-url-api",
   "main": "src/worker/index.ts",
   "compatibility_date": "2026-08-01",
 

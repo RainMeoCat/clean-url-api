@@ -1,5 +1,5 @@
 {
-  "name": "clear-url-api",
+  "name": "clean-url-api",
   "version": "1.0.0",
   "description": "依 ClearURLs 規則集移除網址追蹤碼的 Cloudflare Worker",
   "type": "module",
