@@ -98,7 +98,7 @@ npm run dev
 
 ## 部署到 Cloudflare Workers
 
-規則集會被 bundle 進 Worker（總計約 47 KB / gzip 11 KB），且整份程式碼不依賴任何 `node:` 內建模組，因此不需要 `nodejs_compat`，執行期相依為零。
+規則集會被 bundle 進 Worker（總計約 47 KB / gzip 11 KB）。Worker 可達的所有模組都不 import `node:` 內建模組——`node:fs`／`node:crypto` 只出現在 build 時的規則驗證，不會被 bundle 進去——因此不需要 `nodejs_compat`，執行期相依為零。
 
 1. 編輯 `wrangler.jsonc`，把 `routes[].pattern` 與 `zone_name` 的 `example.com` 換成實際網域。若同時要調整掛載路徑，`vars.MOUNT_PATH` 必須跟著改成相同路徑。
 2. 確認該網域在 Cloudflare 上，且對應的 DNS 記錄是**代理狀態（橘雲）**——灰雲不會觸發 Worker 路由。若該網域沒有 origin 主機，建一筆代理狀態的 `AAAA` 指向 `100::` 即可。
@@ -125,8 +125,8 @@ POST 單次可帶 100 個網址，成本是 GET 的 100 倍，因此配額要獨
 
 ## 文件
 
-- [規則集與更新機制](https://github.com/RainMeoCat/clean-url-api/wiki/Rules-and-Updates) — 規則來源、sha256 驗證、手動更新流程
-- [開發指引](https://github.com/RainMeoCat/clean-url-api/wiki/Development) — 指令、環境變數、編輯器設定、測試
+- [規則集與更新機制](https://github.com/RainMeoCat/clean-url-api/wiki/Rules-and-Updates) — 規則來源、為什麼在 build 時驗 sha256、手動更新流程
+- [開發指引](https://github.com/RainMeoCat/clean-url-api/wiki/Development) — 專案結構、Worker 可達與 build-only 的模組分群、指令、環境變數、測試
 - [實作細節](https://github.com/RainMeoCat/clean-url-api/wiki/Implementation-Notes) — 清理演算法的處理順序與設計取捨
 
 ## 授權
