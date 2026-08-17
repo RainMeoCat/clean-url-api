@@ -6,8 +6,9 @@
  * 這個模組不 import 任何 node: 模組（在 Worker 的 import graph 內）。
  */
 
-import { MAX_BATCH_SIZE, MAX_URL_LENGTH } from '../config.js'
+import { MAX_BATCH_EXPANSIONS, MAX_BATCH_SIZE, MAX_URL_LENGTH } from '../config.js'
 import { InvalidUrlError, cleanUrl } from './url.cleaner.js'
+import type { ShortLinkExpander } from './shortlink.expander.js'
 import type { CompiledProvider } from '../types/clearurls.js'
 
 /** 驗證通過時一併回傳收窄後的值，呼叫端就不需要再做型別斷言 */
@@ -37,6 +38,32 @@ export function validateBatch(urls: unknown): Validation<unknown[]> {
   }
 
   return { ok: true, value: urls }
+}
+
+/**
+ * 先把批次中的短連結換成展開後的網址，再交給字串清理。
+ *
+ * 只展開前 MAX_BATCH_EXPANSIONS 個：每次展開都是一個 subrequest 也是一次外部往返，
+ * 超出的項目原樣往下走——沒展開不是錯誤，使用者至少還是拿到清理過的網址。
+ */
+export function createBatchExpander(expander: ShortLinkExpander): (values: readonly unknown[]) => Promise<unknown[]> {
+  return async (values) => {
+    const targets = values
+      .map((value, index) => ({ value, index }))
+      .filter((entry): entry is { value: string; index: number } => typeof entry.value === 'string')
+      .filter(({ value }) => expander.matches(value))
+      .slice(0, MAX_BATCH_EXPANSIONS)
+
+    if (targets.length === 0) {
+      return [...values]
+    }
+
+    const expanded = await Promise.all(targets.map(({ value }) => expander.expand(value)))
+    const byIndex = new Map(targets.map(({ index }, position) => [index, expanded[position]]))
+
+    // 展開失敗（null）沿用原值，語意與單筆請求一致
+    return values.map((value, index) => byIndex.get(index) ?? value)
+  }
 }
 
 /** 批次項目逐一處理：單筆失敗只讓該筆回傳空字串，不影響其餘網址 */

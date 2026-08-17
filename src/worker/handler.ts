@@ -1,5 +1,6 @@
-import { createBatchCleaner, validateBatch, validateSingleUrl } from '../services/clean.service.js'
+import { createBatchCleaner, createBatchExpander, validateBatch, validateSingleUrl } from '../services/clean.service.js'
 import { InvalidUrlError, cleanUrl } from '../services/url.cleaner.js'
+import type { ShortLinkExpander } from '../services/shortlink.expander.js'
 import type { CompiledProvider } from '../types/clearurls.js'
 
 export interface WorkerEnv {
@@ -25,18 +26,27 @@ function isMountPath(pathname: string, mountPath: string): boolean {
   return pathname === mountPath || pathname === `${mountPath}/`
 }
 
-export function createFetchHandler(providers: CompiledProvider[]) {
+/**
+ * providers 與 expander 都由外部注入：規則集與對外請求的方式因此能在測試中替換，
+ * 模組本身不做任何取得依賴的 side effect。
+ */
+export function createFetchHandler(providers: CompiledProvider[], expander: ShortLinkExpander) {
   const cleanOrEmpty = createBatchCleaner(providers)
+  const expandBatch = createBatchExpander(expander)
 
-  function cleanOne(req: Request): Response {
+  async function cleanOne(req: Request): Promise<Response> {
     const validation = validateSingleUrl(new URL(req.url).searchParams.get('url'))
 
     if (!validation.ok) {
       return json(400, { error: validation.error })
     }
 
+    // 展開失敗（含逾時、查無短碼）回 null，沿用原網址繼續清理——
+    // Threads 的狀態不該決定這個 API 的成敗。非短連結不會發出任何請求。
+    const target = (await expander.expand(validation.value)) ?? validation.value
+
     try {
-      return json(200, { url: cleanUrl(validation.value, providers) })
+      return json(200, { url: cleanUrl(target, providers) })
     } catch (error) {
       // 沒有 middleware 可以攔截，就地把領域錯誤轉成 400；其餘往外拋交給 runtime
       if (error instanceof InvalidUrlError) {
@@ -60,7 +70,7 @@ export function createFetchHandler(providers: CompiledProvider[]) {
       return json(400, { error: validation.error })
     }
 
-    return json(200, { urls: validation.value.map(cleanOrEmpty) })
+    return json(200, { urls: (await expandBatch(validation.value)).map(cleanOrEmpty) })
   }
 
   return async function handleRequest(req: Request, env: WorkerEnv): Promise<Response> {

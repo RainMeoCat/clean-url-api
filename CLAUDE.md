@@ -35,6 +35,8 @@ CI（`.github/workflows/ci.yml`，每次 push）依序跑 `verify:rules` → `fo
 
 `data/rules.min.json` 是上游 ClearURLs 規則集的原始位元組副本，`data/rules.hash` 是它的 sha256。兩者一起進版控，且**必須同時更新**。
 
+`data/rules.local.json` 是本地規則擴充，補上游尚未收錄的網站（目前只有 threads）。它不驗 sha256（本來就是我們自己的檔），但一樣會進 bundle，所以 `verify:rules` 會驗它能不能編譯。編譯順序**排在上游之後**，這個順序在 `src/worker/index.ts` 與 `rules.loader.ts` 的 `loadAllRules()` 各寫了一次，改一邊就要改另一邊——否則測試看到的 provider 會與線上不同。上游哪天補上同名 provider，把本地那筆刪掉即可。
+
 - **絕對不要手動編輯 `data/` 底下任何檔案**，也不要讓 formatter 碰它（已在 `.prettierignore` / eslint ignores 排除）。任何重新格式化都會使 sha256 驗證失敗。
 - 更新規則的唯一途徑是 `npm run vendor`（`scripts/vendor.sh`）：從 rules2/rules1 兩個來源擇一下載、驗 sha256、檢查結構（須含 `globalRules` provider），全部通過才寫檔。接著人工確認 `git diff --stat -- data/`、跑 `npm test`，再一起 commit。
 
@@ -49,19 +51,24 @@ CI（`.github/workflows/ci.yml`，每次 push）依序跑 `verify:rules` → `fo
 模組因此分成兩群：
 
 ```
-Worker 可達      config.ts, types/, services/{url.cleaner, rules.compiler, clean.service}, worker/
+Worker 可達      config.ts, types/, services/{url.cleaner, rules.compiler, clean.service,
+                 shortlink.expander}, worker/
 只在 build 時跑  config.node.ts, services/rules.loader.ts, scripts/verify-rules.ts
 ```
+
+`shortlink.expander.ts` 用的是 Web 標準 `fetch` 與 `AbortSignal`，不是 `node:` 模組，因此仍在第一群。
 
 第二群雖然用 `node:fs` / `node:crypto`，但只服務於 build 時的規則驗證，永遠不會被 bundle 進 Worker。要在第一群加東西時，先確認它不需要 Node API；需要磁碟路徑的設定放 `config.node.ts`，不要放回 `config.ts`。
 
 ### 組裝流程
 
 ```
-data/rules.min.json（bundle）→ compileRuleSet() → CompiledProvider[] → createFetchHandler() → fetch
+data/rules.min.json + rules.local.json（bundle）→ compileRuleSet() → CompiledProvider[] ┐
+                                                                                        ├→ createFetchHandler() → fetch
+SHORT_LINK_PROVIDERS + fetch → createShortLinkExpander() → ShortLinkExpander ────────────┘
 ```
 
-規則在模組載入時一次編譯成 `RegExp`（206 個 provider、1095 條 regex，實測約 2 ms），同一個 isolate 的所有請求共用。`createFetchHandler()` 接收 providers 而非自己取得規則，測試才能塞自製規則集。新增依賴時沿用這個形式，不要在模組層級做額外 side effect。
+規則在模組載入時一次編譯成 `RegExp`（207 個 provider、1095 條 regex，實測約 2 ms），同一個 isolate 的所有請求共用。`createFetchHandler()` 接收 providers 與 expander 而非自己取得，測試才能塞自製規則集與假 fetch。新增依賴時沿用這個形式，不要在模組層級做額外 side effect。
 
 ### 清理演算法（`src/services/url.cleaner.ts`）
 
@@ -78,6 +85,20 @@ exceptions → redirections → completeProvider → rawRules → rules
 - **`rules` 在編譯期被錨定成 `^(?:...)$`**（`rules.compiler.ts`），否則 `id` 這種規則會誤傷 `video_id`。
 - **`referralMarketing` 與 `rules` 合併**一併移除，本 API 不保留聯盟參數。
 - 轉址目標解出後會**遞迴呼叫 `cleanUrl()` 再清一次**，深度上限 `MAX_REDIRECTION_DEPTH`（5）。
+
+### 短連結展開（`src/services/shortlink.expander.ts`）
+
+ClearURLs 的 `redirections` 只能處理「目標已內嵌在網址裡」的轉址。`threads.com/share/<code>` 只有短碼，目標只有伺服器知道，所以這是**專案唯一會對外發請求的模組**。
+
+安全邊界全集中在這個檔案，改動時別打破：
+
+- **只有命中 `provider.pattern` 的網址才會被 fetch**。pattern 錨定且網域寫死，呼叫端無法藉此讓 Worker 去打任意位址——放寬成「看到網址就跟隨轉址」等於開一個 SSRF proxy。
+- `redirect: 'manual'` 逐跳自驗，每一跳的目標都必須是 https 且落在 `allowedHosts`；跳數上限 `MAX_SHORTLINK_HOPS`（2，因為 threads.net 會先 301 到 threads.com 的同一個短碼）。
+- **UA 不能省略也不能偽裝成瀏覽器**：不帶 UA 會被 Threads 導去 `facebook.com/unsupportedbrowser`，完整瀏覽器 UA 則拿到 200 + JS 跳轉頁（頁面裡讀不到目標）。一般的非瀏覽器 UA 才會拿到帶 `Location` 的 302。
+- 用 `GET` 而非 `HEAD`：轉址回應 body 本來就 0 bytes，成本相同但相容性較好。
+- **展開失敗一律回 `null` 而非拋錯**，呼叫端沿用原網址繼續清理。外部服務的狀態不該決定這個 API 的成敗。
+
+批次的展開上限（`MAX_BATCH_EXPANSIONS`）在 `clean.service.ts`，那裡是批次語意的所在。目前沒有做快取——Threads 回 `cache-control: private, no-cache`，要快取得自己用 Cache API，有量再說。
 
 ### 錯誤與回應約定
 
@@ -99,7 +120,7 @@ exceptions → redirections → completeProvider → rawRules → rules
 
 ### 設定
 
-所有上限集中在 `src/config.ts`（`MAX_URL_LENGTH`、`MAX_BATCH_SIZE`、`MAX_REDIRECTION_DEPTH`）。`src/config.node.ts` 只有規則檔路徑（`RULES_PATH`、`RULES_HASH_PATH`，可用同名環境變數覆寫，測試以此指向 fixture）。
+所有上限集中在 `src/config.ts`（`MAX_URL_LENGTH`、`MAX_BATCH_SIZE`、`MAX_REDIRECTION_DEPTH`、`SHORTLINK_TIMEOUT_MS`、`MAX_SHORTLINK_HOPS`、`MAX_BATCH_EXPANSIONS`、`SHORTLINK_USER_AGENT`）。`src/config.node.ts` 只有規則檔路徑（`RULES_PATH`、`RULES_HASH_PATH`，可用同名環境變數覆寫，測試以此指向 fixture）。
 
 ## 慣例
 

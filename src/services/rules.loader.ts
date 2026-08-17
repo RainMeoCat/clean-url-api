@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
+import localRules from '../../data/rules.local.json' with { type: 'json' }
 import { RULES_HASH_PATH, RULES_PATH } from '../config.node.js'
 import type { CompiledProvider, RuleSet } from '../types/clearurls.js'
 import { RulesLoadError, compileRuleSet } from './rules.compiler.js'
@@ -48,4 +49,16 @@ export function loadRules(rulesPath: string = RULES_PATH, hashPath: string = RUL
   }
 
   return compileRuleSet(parsed as RuleSet)
+}
+
+/**
+ * 上游快照加上本地規則擴充，順序與 Worker 進入點的組裝一致——
+ * Node 端的測試與 build 驗證因此看到的是線上真正會套用的那組 provider。
+ *
+ * 本地擴充存在的理由：data/rules.min.json 是上游的位元組副本，動它 sha256 就不符，
+ * 但總有上游尚未收錄、又確實需要處理的網站（如 threads）。本地規則排在上游之後套用；
+ * 將來上游補上同名 provider，把 data/rules.local.json 裡那筆刪掉即可。
+ */
+export function loadAllRules(rulesPath?: string, hashPath?: string): CompiledProvider[] {
+  return [...loadRules(rulesPath, hashPath), ...compileRuleSet(localRules satisfies RuleSet)]
 }

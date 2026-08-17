@@ -9,10 +9,12 @@
  */
 
 import { RULES_PATH } from '../src/config.node.js'
-import { loadRules } from '../src/services/rules.loader.js'
+import { loadAllRules } from '../src/services/rules.loader.js'
 
 try {
-  const providers = loadRules()
+  // 用 loadAllRules 而非 loadRules：本地規則擴充（data/rules.local.json）雖然不驗 sha256，
+  // 但它的 regex 一樣會進 bundle，壞掉的話同樣該讓部署失敗而不是讓線上服務出錯。
+  const providers = loadAllRules()
   console.log(`✓ 規則檔驗證通過：${providers.length} 個 provider`)
 } catch (error) {
   console.error(`✗ 規則檔驗證失敗（${RULES_PATH}）`)

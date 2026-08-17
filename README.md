@@ -2,7 +2,7 @@
 
 依 [ClearURLs](https://github.com/ClearURLs/Rules) 規則集移除網址追蹤碼的 Cloudflare Worker。
 
-丟一個網址進來，回傳乾淨的網址：拿掉追蹤參數、聯盟行銷碼與站台專屬的追蹤片段；若是廣告轉址網址，直接解出它真正指向的目標。
+丟一個網址進來，回傳乾淨的網址：拿掉追蹤參數、聯盟行銷碼與站台專屬的追蹤片段；若是廣告轉址網址，直接解出它真正指向的目標；若是 Threads 的分享短連結，先向它問出真正的網址再清理。
 
 ## 能做什麼
 
@@ -31,11 +31,22 @@ Amazon      https://www.amazon.com/dp/B0123/ref=sr_1_1?qid=999&tag=aff-20
 
 廣告網址    https://pagead2.googlesyndication.com/pagead/ads?client=ca-pub-1
          →  ""（整個網址即追蹤器，沒有乾淨版本）
+
+Threads      https://www.threads.com/share/Fp3agZKiy/
+分享短連結 →  https://www.threads.com/@amtb4818/post/DcIG72GFE5W
 ```
 
 轉址解析涵蓋 Google、Facebook、YouTube、Instagram、Messenger、Reddit、eBay、Steam、Tumblr、VK、DuckDuckGo、Pocket、Adjust 等平台，以及 AWIN、Admitad、Tradedoubler、Skimlinks、VigLink、digidip、href.li 等聯盟／短連結服務。解出的目標**會再被完整清理一次**，巢狀轉址最多解 5 層。
 
-規則由 `data/rules.min.json` 驅動，未寫死在程式碼中；要更新時執行 `npm run vendor` 重新抓取官方規則，確認 diff 與測試後 commit 即生效。詳見 [規則集與更新機制](https://github.com/RainMeoCat/clean-url-api/wiki/Rules-and-Updates)。
+規則由 `data/rules.min.json` 驅動，未寫死在程式碼中；要更新時執行 `npm run vendor` 重新抓取官方規則，確認 diff 與測試後 commit 即生效。上游尚未收錄的網站則以 `data/rules.local.json` 補上（目前只有 Threads 的 `xmt`、`igshid`、`igsh`）。詳見 [規則集與更新機制](https://github.com/RainMeoCat/clean-url-api/wiki/Rules-and-Updates)。
+
+### 短連結展開
+
+多數轉址網址把目標內嵌在網址裡（如 `google.com/url?q=...`），純字串處理就能解出。但 Threads 的分享短連結 `threads.com/share/<code>` 只有一組短碼，目標只存在伺服器端，因此這類網址會**實際發出一次請求**取得 `Location` 再清理。
+
+- 只有明確命中白名單樣式的網址會觸發外部請求，其餘網址一律純字串處理、不連外。
+- 展開失敗（查無短碼、逾時、目標跳出白名單）不算錯誤，會回退成只做字串清理並照樣回 `200`。
+- 批次一次最多展開 10 個，超出的項目只做字串清理。
 
 ## API 使用方式
 
@@ -79,11 +90,13 @@ curl -s -X POST http://localhost:8787/api/clean-url \
 
 ### 限制
 
-| 項目             | 上限      |
-| ---------------- | --------- |
-| 單一網址長度     | 8192 字元 |
-| 單次批次數量     | 100 筆    |
-| 巢狀轉址展開層數 | 5 層      |
+| 項目                 | 上限      |
+| -------------------- | --------- |
+| 單一網址長度         | 8192 字元 |
+| 單次批次數量         | 100 筆    |
+| 巢狀轉址展開層數     | 5 層      |
+| 單次批次展開短連結數 | 10 個     |
+| 短連結展開逾時       | 3 秒      |
 
 速率限制不在程式碼裡，由 Cloudflare WAF 負責——見下方「建議的節流設定」。
 

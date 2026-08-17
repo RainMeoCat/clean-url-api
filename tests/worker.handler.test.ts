@@ -1,14 +1,18 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import { MAX_BATCH_SIZE, MAX_URL_LENGTH } from '../src/config.js'
 import { loadRules } from '../src/services/rules.loader.js'
+import type { ShortLinkExpander } from '../src/services/shortlink.expander.js'
 import { createFetchHandler, type WorkerEnv } from '../src/worker/handler.js'
 
 const env: WorkerEnv = { MOUNT_PATH: '/api/clean-url' }
 
+/** 這組測試只關心字串清理；短連結展開另有 worker.shortlink.test.ts */
+const noExpansion: ShortLinkExpander = { matches: () => false, expand: () => Promise.resolve(null) }
+
 let handle: (req: Request, env: WorkerEnv) => Promise<Response>
 
 beforeAll(() => {
-  handle = createFetchHandler(loadRules())
+  handle = createFetchHandler(loadRules(), noExpansion)
 })
 
 /** 掛載路徑固定，測試只關心查詢字串；url 一律編碼以免與外層查詢字串混淆 */

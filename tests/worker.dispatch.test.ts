@@ -1,13 +1,17 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import { loadRules } from '../src/services/rules.loader.js'
+import type { ShortLinkExpander } from '../src/services/shortlink.expander.js'
 import { createFetchHandler, type WorkerEnv } from '../src/worker/handler.js'
 
 const env: WorkerEnv = { MOUNT_PATH: '/api/clean-url' }
 
+/** 這組測試只關心路由分派，不涉及短連結展開 */
+const noExpansion: ShortLinkExpander = { matches: () => false, expand: () => Promise.resolve(null) }
+
 let handle: (req: Request, env: WorkerEnv) => Promise<Response>
 
 beforeAll(() => {
-  handle = createFetchHandler(loadRules())
+  handle = createFetchHandler(loadRules(), noExpansion)
 })
 
 function get(pathAndQuery: string): Request {
