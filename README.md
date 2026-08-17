@@ -139,7 +139,7 @@ Worker 本身不做速率限制——WAF 的 Rate Limiting Rules 跑在 Worker *
 
 POST 單次可帶 100 個網址，成本是 GET 的 100 倍，因此配額要獨立且更嚴。動作請選 **Block**，不要用 Managed Challenge——API 用戶端不會解 challenge。
 
-`wrangler.jsonc` 另外設了 `limits.cpu_ms`，讓惡意輸入最多只燒掉自己那一個請求的 CPU 預算（付費方案適用，免費方案請移除該段）。
+`wrangler.jsonc` 不設 `limits.cpu_ms`——該欄位僅付費方案可調，免費方案沿用平台預設的 10 ms CPU 上限。升級付費方案後可加回去，讓惡意輸入最多只燒掉自己那一個請求的 CPU 預算。
 
 ## 文件
 

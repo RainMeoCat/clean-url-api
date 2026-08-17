@@ -32,12 +32,9 @@
     "MOUNT_PATH": "/api/clean-url",
   },
 
-  // 單一請求的 CPU 上限。正常請求用不到 1 ms，設低是為了讓惡意輸入
-  // （例如觸發規則 regex catastrophic backtracking）只燒掉自己那一個請求。
-  // 註：付費方案才可調整，免費方案請移除這段。
-  "limits": {
-    "cpu_ms": 50,
-  },
+  // 這裡刻意不設 limits.cpu_ms：該欄位僅付費方案可調，免費方案一律沿用平台
+  // 預設的 10 ms CPU 上限。日後升級付費方案時可加回 "limits": { "cpu_ms": 50 }，
+  // 讓惡意輸入（例如觸發規則 regex catastrophic backtracking）只燒掉自己那一個請求。
 
   "observability": {
     "enabled": true,
