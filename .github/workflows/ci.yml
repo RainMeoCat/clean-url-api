@@ -30,3 +30,34 @@ jobs:
 
       # 確認 Worker 仍可 bundle（dry-run，不部署）
       - run: npm run build
+
+  deploy:
+    name: 部署到 Cloudflare Workers
+    # 只有 main 分支、且上面整串檢查全綠才部署
+    needs: check
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    # 同一時間只跑一次部署；連續 push 時取消排隊中的舊的，
+    # 避免兩個 wrangler deploy 互相覆蓋而讓線上版本與 main 不一致
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # 用 npm script 而非 cloudflare/wrangler-action：
+      # 前者跑的是 lockfile 鎖住的 wrangler 版本，與本機 `npm run deploy`
+      # 完全同一條路徑；wrangler-action 會自己裝一份 wrangler，版本會漂。
+      # deploy script 本身已包含 verify:rules，規則壞掉就不會上線。
+      - run: npm run deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

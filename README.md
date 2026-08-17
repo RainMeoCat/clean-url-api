@@ -110,6 +110,20 @@ npm run deploy
 
 `deploy` 會先跑 `verify:rules`；規則檔的 sha256 對不上就中止，不會把來源不明的 regex 部署上線。
 
+### 自動部署
+
+推上 `main` 且 CI 全綠時，`.github/workflows/ci.yml` 的 `deploy` job 會自動跑 `npm run deploy`——與本機同一條路徑、同一個 lockfile 鎖住的 wrangler 版本。
+
+需要在 repo 的 Settings → Secrets and variables → Actions 建一個 `CLOUDFLARE_API_TOKEN`。Token 用 Cloudflare 的 **Edit Cloudflare Workers** 範本即可，但 zone 資源必須涵蓋本專案的網域——route 用了 `zone_name`，wrangler 得先讀到 zone 才能綁定：
+
+| 範圍                      | 權限 |
+| ------------------------- | ---- |
+| Account → Workers Scripts | Edit |
+| Zone → Workers Routes     | Edit |
+| Zone → Zone               | Read |
+
+若該 token 能存取多個 Cloudflare 帳號，還要一併設 `CLOUDFLARE_ACCOUNT_ID`，否則 wrangler 無從判斷要部署到哪個帳號。
+
 ### 建議的節流設定
 
 Worker 本身不做速率限制——WAF 的 Rate Limiting Rules 跑在 Worker **之前**，被擋下的請求不計入 Worker 用量，成本與防護都更好。建議在 Cloudflare dashboard（Security → WAF → Rate limiting rules）設定：
