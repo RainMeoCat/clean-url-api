@@ -110,9 +110,13 @@ npm run deploy
 
 `deploy` 會先跑 `verify:rules`；規則檔的 sha256 對不上就中止，不會把來源不明的 regex 部署上線。
 
-### 自動部署
+### 從 GitHub Actions 部署
 
-推上 `main` 且 CI 全綠時，`.github/workflows/ci.yml` 的 `deploy` job 會自動跑 `npm run deploy`——與本機同一條路徑、同一個 lockfile 鎖住的 wrangler 版本。
+部署是**手動閘門**：推上 `main` 只會跑檢查，不會上線。要部署請到 repo 的 Actions → CI → **Run workflow**，分支選 `main`。`deploy` job 跑的是 `npm run deploy`——與本機同一條路徑、同一個 lockfile 鎖住的 wrangler 版本。
+
+`Run workflow` 按鈕只在**預設分支上的 workflow 檔含有 `workflow_dispatch`** 時才出現；這個設定尚未進到 `main` 之前，Actions 頁面上看不到它。
+
+從其他分支按 Run workflow 時，`deploy` job 會被跳過（顯示 skipped）——避免誤把功能分支推上線。
 
 需要在 repo 的 Settings → Secrets and variables → Actions 建一個 `CLOUDFLARE_API_TOKEN`。Token 用 Cloudflare 的 **Edit Cloudflare Workers** 範本即可，但 zone 資源必須涵蓋本專案的網域——route 用了 `zone_name`，wrangler 得先讀到 zone 才能綁定：
 

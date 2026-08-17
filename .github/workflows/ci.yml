@@ -1,6 +1,10 @@
 name: CI
 
-on: push
+on:
+  push:
+  # 部署是手動閘門：推 main 只跑檢查不上線，
+  # 要部署得到 Actions 頁面按 Run workflow
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -33,13 +37,15 @@ jobs:
 
   deploy:
     name: 部署到 Cloudflare Workers
-    # 只有 main 分支、且上面整串檢查全綠才部署
+    # 手動觸發、來源是 main、且上面整串檢查全綠，三個條件都成立才部署。
+    # 限定 main 是因為 Run workflow 可以挑分支，
+    # 不擋的話按錯就把功能分支推上線了
     needs: check
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
-    # 同一時間只跑一次部署；連續 push 時取消排隊中的舊的，
-    # 避免兩個 wrangler deploy 互相覆蓋而讓線上版本與 main 不一致
+    # 同一時間只跑一次部署，避免手動連按兩次時
+    # 兩個 wrangler deploy 互相覆蓋
     concurrency:
       group: deploy-production
       cancel-in-progress: false
