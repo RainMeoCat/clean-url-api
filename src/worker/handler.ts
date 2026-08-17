@@ -38,7 +38,7 @@ export function createFetchHandler(providers: CompiledProvider[]) {
     try {
       return json(200, { url: cleanUrl(validation.value, providers) })
     } catch (error) {
-      // Express 版是丟給 errorHandler 轉 400，Worker 沒有 middleware，就地轉換
+      // 沒有 middleware 可以攔截，就地把領域錯誤轉成 400；其餘往外拋交給 runtime
       if (error instanceof InvalidUrlError) {
         return json(400, { error: error.message })
       }

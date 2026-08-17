@@ -21,7 +21,7 @@ export default tseslint.config(
       // 由 tsc 負責，ESLint 不認得 TS 的環境型別宣告
       'no-undef': 'off',
       '@typescript-eslint/consistent-type-imports': 'error',
-      // Express 以參數個數辨識錯誤處理中介層，未使用的參數仍必須保留
+      // 底線前綴代表「刻意不使用」，套用於參數、變數與 catch 綁定
       '@typescript-eslint/no-unused-vars': [
         'error',
         {

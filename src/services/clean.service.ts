@@ -1,9 +1,9 @@
 /**
- * Express 與 Worker 共用的請求驗證與批次語意。
+ * 請求驗證與批次語意：「什麼算不合法」與「錯誤訊息長怎樣」都定義在這裡。
  *
- * 兩個 transport 的錯誤回應方式不同（Express 走 middleware、Worker 直接組 Response），
- * 但「什麼算不合法」與「錯誤訊息長怎樣」必須一致，所以放在這裡而不是各自實作。
- * 這個模組不 import 任何 node: 模組。
+ * 刻意與 transport 分開——handler 只負責把結果轉成 Response，驗證規則因此
+ * 能被單獨測試，也不會散落在路由分派裡。要改訊息或上限就改這個檔案。
+ * 這個模組不 import 任何 node: 模組（在 Worker 的 import graph 內）。
  */
 
 import { MAX_BATCH_SIZE, MAX_URL_LENGTH } from '../config.js'
