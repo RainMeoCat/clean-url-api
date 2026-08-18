@@ -37,8 +37,9 @@ CI（`.github/workflows/ci.yml`，每次 push）依序跑 `verify:rules` → `fo
 
 `data/rules.local.json` 是本地規則擴充，補上游尚未收錄的網站（目前只有 threads）。它不驗 sha256（本來就是我們自己的檔），但一樣會進 bundle，所以 `verify:rules` 會驗它能不能編譯。編譯順序**排在上游之後**，這個順序在 `src/worker/index.ts` 與 `rules.loader.ts` 的 `loadAllRules()` 各寫了一次，改一邊就要改另一邊——否則測試看到的 provider 會與線上不同。上游哪天補上同名 provider，把本地那筆刪掉即可。
 
-- **絕對不要手動編輯 `data/` 底下任何檔案**，也不要讓 formatter 碰它（已在 `.prettierignore` / eslint ignores 排除）。任何重新格式化都會使 sha256 驗證失敗。
-- 更新規則的唯一途徑是 `npm run vendor`（`scripts/vendor.sh`）：從 rules2/rules1 兩個來源擇一下載、驗 sha256、檢查結構（須含 `globalRules` provider），全部通過才寫檔。接著人工確認 `git diff --stat -- data/`、跑 `npm test`，再一起 commit。
+- **絕對不要手動編輯 `data/rules.min.json` 與 `data/rules.hash`**。整個 `data/` 都不讓 formatter 碰（已在 `.prettierignore` / eslint ignores 排除），因為任何重新格式化都會使 sha256 驗證失敗。
+- 更新上游規則的唯一途徑是 `npm run vendor`（`scripts/vendor.sh`）：從 rules2/rules1 兩個來源擇一下載、驗 sha256、檢查結構（須含 `globalRules` provider），全部通過才寫檔。接著人工確認 `git diff --stat -- data/`、跑 `npm test`，再一起 commit。
+- `data/rules.local.json` 相反，**只能手動編輯**——`vendor` 不會碰它，它也不驗 sha256。因為 formatter 被排除在外，縮排要自己對齊既有風格。改完跑 `npm run verify:rules` 確認仍可編譯，並在 `tests/rules.local.test.ts` 補上對應案例。
 
 **驗證發生在 build 時，不是執行期**。Workers 沒有檔案系統，規則是 bundle 進去的，執行期再驗一次沒有意義（bundle 被竄改的話裡面的 hash 也一起被竄改）。`scripts/verify-rules.ts` 由 CI、`build` 與 `deploy` 呼叫，壞掉的規則會讓**部署失敗**而不是讓線上服務掛掉。
 

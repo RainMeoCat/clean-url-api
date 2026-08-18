@@ -2,7 +2,19 @@
   "providers": {
     "threads": {
       "urlPattern": "^https?://(?:[a-z0-9-]+\\.)*?threads\\.(?:com|net)",
-      "rules": ["xmt", "igshid", "igsh"]
+      "rules": [
+        "xmt",
+        "igshid",
+        "igsh",
+        "slof",
+        "hwta",
+        "appclip",
+        "handoff",
+        "login_success",
+        "onboarding_complete",
+        "show_app_header",
+        "tifu_login"
+      ]
     }
   }
 }

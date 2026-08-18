@@ -37,6 +37,24 @@ describe('本地規則 — threads', () => {
     )
   })
 
+  // slof / hwta 無任何公開文件，也不在 Threads 前端 bundle 與 permalink 路由承認的參數清單裡，
+  // 是分享端貼上去、只供 Meta 伺服器側記錄的惰性標記。實測帶與不帶，
+  // og:url / canonical / al:ios:url 逐字相同，移除不影響貼文顯示。
+  it('移除分享面板附加的 slof 與 hwta', () => {
+    const input = 'https://www.threads.com/@a/post/B?slof=1&hwta=1'
+
+    expect(cleanUrl(input, providers)).toBe('https://www.threads.com/@a/post/B')
+  })
+
+  // 這批相反地「會」被路由解析，但都是登入／導流流程的一次性狀態，不帶貼文身分——
+  // Threads 自己也在 stripParams 裡列出它們，讀完就從網址列抹掉。分享出去的連結不該留著。
+  it('移除登入與導流流程殘留的參數', () => {
+    const input =
+      'https://www.threads.com/@a/post/B?appclip=1&handoff=1&login_success=true&onboarding_complete=true&show_app_header=true&tifu_login=true'
+
+    expect(cleanUrl(input, providers)).toBe('https://www.threads.com/@a/post/B')
+  })
+
   it('保留非追蹤參數', () => {
     const input = 'https://www.threads.com/@a/post/B?xmt=AQG0&hl=zh-tw'
 
