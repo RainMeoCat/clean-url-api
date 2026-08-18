@@ -19,7 +19,9 @@ export const SHORTLINK_TIMEOUT_MS = 3000
 
 /**
  * 短連結展開最多跟隨的轉址次數。
- * 需要 2 是因為 threads.net 會先 301 到 threads.com 的同一個短碼，第二跳才是真正的目標。
+ *
+ * 需要 2 是因為有些網域會先 301 到自己的正規網域、短碼原封不動，第二跳才是真正的目標：
+ * threads.net → threads.com、facebook.com → www.facebook.com 都是這個形狀。
  */
 export const MAX_SHORTLINK_HOPS = 2
 

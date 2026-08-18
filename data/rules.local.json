@@ -15,6 +15,10 @@
         "show_app_header",
         "tifu_login"
       ]
+    },
+    "facebook": {
+      "urlPattern": "^https?://(?:[a-z0-9-]+\\.)*?facebook\\.com",
+      "rules": ["rdid", "share_url"]
     }
   }
 }

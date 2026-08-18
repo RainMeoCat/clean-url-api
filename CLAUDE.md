@@ -35,7 +35,7 @@ CI（`.github/workflows/ci.yml`，每次 push）依序跑 `verify:rules` → `fo
 
 `data/rules.min.json` 是上游 ClearURLs 規則集的原始位元組副本，`data/rules.hash` 是它的 sha256。兩者一起進版控，且**必須同時更新**。
 
-`data/rules.local.json` 是本地規則擴充，補上游尚未收錄的網站（目前只有 threads）。它不驗 sha256（本來就是我們自己的檔），但一樣會進 bundle，所以 `verify:rules` 會驗它能不能編譯。編譯順序**排在上游之後**，這個順序在 `src/worker/index.ts` 與 `rules.loader.ts` 的 `loadAllRules()` 各寫了一次，改一邊就要改另一邊——否則測試看到的 provider 會與線上不同。上游哪天補上同名 provider，把本地那筆刪掉即可。
+`data/rules.local.json` 是本地規則擴充，補上游沒收錄的網站或沒收錄的參數（目前是 threads 與 facebook；facebook 上游已有同名 provider，本地這筆是補參數而非取代，兩者都會套用）。它不驗 sha256（本來就是我們自己的檔），但一樣會進 bundle，所以 `verify:rules` 會驗它能不能編譯。編譯順序**排在上游之後**，這個順序在 `src/worker/index.ts` 與 `rules.loader.ts` 的 `loadAllRules()` 各寫了一次，改一邊就要改另一邊——否則測試看到的 provider 會與線上不同。上游哪天補上同名 provider，把本地那筆刪掉即可。
 
 - **絕對不要手動編輯 `data/rules.min.json` 與 `data/rules.hash`**。整個 `data/` 都不讓 formatter 碰（已在 `.prettierignore` / eslint ignores 排除），因為任何重新格式化都會使 sha256 驗證失敗。
 - 更新上游規則的唯一途徑是 `npm run vendor`（`scripts/vendor.sh`）：從 rules2/rules1 兩個來源擇一下載、驗 sha256、檢查結構（須含 `globalRules` provider），全部通過才寫檔。接著人工確認 `git diff --stat -- data/`、跑 `npm test`，再一起 commit。
@@ -69,7 +69,7 @@ data/rules.min.json + rules.local.json（bundle）→ compileRuleSet() → Compi
 SHORT_LINK_PROVIDERS + fetch → createShortLinkExpander() → ShortLinkExpander ────────────┘
 ```
 
-規則在模組載入時一次編譯成 `RegExp`（207 個 provider、1107 條 regex，實測約 2 ms），同一個 isolate 的所有請求共用。`createFetchHandler()` 接收 providers 與 expander 而非自己取得，測試才能塞自製規則集與假 fetch。新增依賴時沿用這個形式，不要在模組層級做額外 side effect。
+規則在模組載入時一次編譯成 `RegExp`（208 個 provider、1110 條 regex，實測約 2 ms），同一個 isolate 的所有請求共用。`createFetchHandler()` 接收 providers 與 expander 而非自己取得，測試才能塞自製規則集與假 fetch。新增依賴時沿用這個形式，不要在模組層級做額外 side effect。
 
 ### 清理演算法（`src/services/url.cleaner.ts`）
 
@@ -89,17 +89,21 @@ exceptions → redirections → completeProvider → rawRules → rules
 
 ### 短連結展開（`src/services/shortlink.expander.ts`）
 
-ClearURLs 的 `redirections` 只能處理「目標已內嵌在網址裡」的轉址。`threads.com/share/<code>` 只有短碼，目標只有伺服器知道，所以這是**專案唯一會對外發請求的模組**。
+ClearURLs 的 `redirections` 只能處理「目標已內嵌在網址裡」的轉址。`threads.com/share/<code>` 與 `facebook.com/share/<code>` 只有短碼，目標只有伺服器知道，所以這是**專案唯一會對外發請求的模組**。
+
+`SHORT_LINK_PROVIDERS` 是一組 provider，每筆各自帶 `pattern` 與 `allowedHosts`。**白名單刻意不共用一份大的**：合併的話 threads 的短碼就能被轉去 facebook.com（反之亦然），而「短碼只能落在自己的網域」正是這道邊界要保證的事。新增網站是往這個陣列加一筆，不是放寬既有那筆的 regex。
 
 安全邊界全集中在這個檔案，改動時別打破：
 
 - **只有命中 `provider.pattern` 的網址才會被 fetch**。pattern 錨定且網域寫死，呼叫端無法藉此讓 Worker 去打任意位址——放寬成「看到網址就跟隨轉址」等於開一個 SSRF proxy。
-- `redirect: 'manual'` 逐跳自驗，每一跳的目標都必須是 https 且落在 `allowedHosts`；跳數上限 `MAX_SHORTLINK_HOPS`（2，因為 threads.net 會先 301 到 threads.com 的同一個短碼）。
+- `redirect: 'manual'` 逐跳自驗，每一跳的目標都必須是 https 且落在 `allowedHosts`；跳數上限 `MAX_SHORTLINK_HOPS`（2，因為有些網域會先 301 到自己的正規網域、短碼原封不動：threads.net → threads.com、facebook.com → www.facebook.com）。
 - **UA 不能省略也不能偽裝成瀏覽器**：不帶 UA 會被 Threads 導去 `facebook.com/unsupportedbrowser`，完整瀏覽器 UA 則拿到 200 + JS 跳轉頁（頁面裡讀不到目標）。一般的非瀏覽器 UA 才會拿到帶 `Location` 的 302。
 - 用 `GET` 而非 `HEAD`：轉址回應 body 本來就 0 bytes，成本相同但相容性較好。
 - **展開失敗一律回 `null` 而非拋錯**，呼叫端沿用原網址繼續清理。外部服務的狀態不該決定這個 API 的成敗。
 
 一個請求最多展開一次（API 只接收一個網址），所以沒有展開數量的上限要管。目前也沒有做快取——Threads 回 `cache-control: private, no-cache`，要快取得自己用 Cache API，有量再說。
+
+已知限制：`web.facebook.com` 的短連結不展開。它的第一跳會轉到 www 的**同一個短碼再加上 `?_rdc=1&_rdr`**，帶了 query 就不再命中樣式，逐跳迴圈會誤判成「已展開完成」而回傳一個仍是短連結的網址。要支援它就得讓樣式接受 query，那會同時放寬「夾帶查詢字串的假短連結不發請求」這條界線，不划算——FB App 產生的分享連結是 www／m／裸網域，都已涵蓋。
 
 ### 錯誤與回應約定
 

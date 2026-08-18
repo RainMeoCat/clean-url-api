@@ -171,3 +171,57 @@ describe('createShortLinkExpander — expand', () => {
     expect(Object.keys((calls[0]?.init?.headers as Record<string, string>) ?? {})).toEqual(['user-agent'])
   })
 })
+
+/**
+ * facebook 與 threads 走同一個展開器，差別只在 pattern 與 allowedHosts。
+ * 這組測試同時守著兩件事：facebook 短連結能展開，以及兩個 provider 的
+ * 白名單沒有互通——後者是 allowedHosts 分開放的唯一理由。
+ */
+const FB_SHARE = 'https://www.facebook.com/share/1976XaXjie/'
+const FB_TARGET =
+  'https://www.facebook.com/100063463526923/posts/1686328943492540/?rdid=sEZBQz6DRj83mFco&share_url=https%3A%2F%2Fwww.facebook.com%2Fshare%2F1976XaXjie%2F'
+
+describe('createShortLinkExpander — facebook', () => {
+  it('認得 /share/ 短連結：含單字母類型片段、m. 子網域、無尾斜線', async () => {
+    const typed = 'https://www.facebook.com/share/p/1976XaXjie/'
+    const mobile = 'https://m.facebook.com/share/1976XaXjie/'
+    const noSlash = 'https://www.facebook.com/share/v/1976XaXjie'
+    const routes = { [typed]: FB_TARGET, [mobile]: FB_TARGET, [noSlash]: FB_TARGET }
+    const { expand, calls } = expanderFor(routes)
+
+    expect(await expand(typed)).toBe(FB_TARGET)
+    expect(await expand(mobile)).toBe(FB_TARGET)
+    expect(await expand(noSlash)).toBe(FB_TARGET)
+    expect(calls.map(({ url }) => url)).toEqual([typed, mobile, noSlash])
+  })
+
+  it('裸網域 facebook.com 先跳 www 的同一個短碼，第二跳才是目標', async () => {
+    const bare = 'https://facebook.com/share/1976XaXjie/'
+    const { expand, calls } = expanderFor({ [bare]: FB_SHARE, [FB_SHARE]: FB_TARGET })
+
+    expect(await expand(bare)).toBe(FB_TARGET)
+    expect(calls).toHaveLength(2)
+  })
+
+  it('web.facebook.com 不在樣式內，連請求都不發', async () => {
+    const { expand, calls } = expanderFor({})
+
+    expect(await expand('https://web.facebook.com/share/1976XaXjie/')).toBeNull()
+    expect(calls).toEqual([])
+  })
+
+  it('一般 facebook 貼文與缺短碼的路徑都不發請求', async () => {
+    const { expand, calls } = expanderFor({})
+
+    expect(await expand('https://www.facebook.com/Taipeiinfohub/posts/1686328943492540/')).toBeNull()
+    expect(await expand('https://www.facebook.com/share/')).toBeNull()
+    expect(await expand('https://www.facebook.com.evil.example/share/abc/')).toBeNull()
+    expect(calls).toEqual([])
+  })
+
+  it('facebook 短連結被轉去 threads 網域時視為展開失敗', async () => {
+    const { expand } = expanderFor({ [FB_SHARE]: 'https://www.threads.com/@a/post/B' })
+
+    expect(await expand(FB_SHARE)).toBeNull()
+  })
+})

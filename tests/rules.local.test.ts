@@ -67,3 +67,26 @@ describe('本地規則 — threads', () => {
     expect(cleanUrl(input, providers)).toBe(input)
   })
 })
+
+// 上游已有 facebook provider，但不含分享短連結展開後帶的這兩個參數；
+// 本地這筆是補充而非取代，兩者都會套用。上游哪天收錄了就把本地這筆刪掉。
+describe('本地規則 — facebook', () => {
+  it('移除分享短連結展開後帶的 rdid 與 share_url', () => {
+    const input =
+      'https://www.facebook.com/100063463526923/posts/1686328943492540/?rdid=sEZBQz6DRj83mFco&share_url=https%3A%2F%2Fwww.facebook.com%2Fshare%2F1976XaXjie%2F'
+
+    expect(cleanUrl(input, providers)).toBe('https://www.facebook.com/100063463526923/posts/1686328943492540/')
+  })
+
+  it('與上游 facebook 規則並存，兩邊的參數一起移除', () => {
+    const input = 'https://www.facebook.com/p/1?rdid=abc&mibextid=xyz&fbclid=zzz'
+
+    expect(cleanUrl(input, providers)).toBe('https://www.facebook.com/p/1')
+  })
+
+  it('保留非追蹤參數', () => {
+    const input = 'https://www.facebook.com/p/1?rdid=abc&locale=zh_TW'
+
+    expect(cleanUrl(input, providers)).toBe('https://www.facebook.com/p/1?locale=zh_TW')
+  })
+})

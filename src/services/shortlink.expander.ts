@@ -2,8 +2,8 @@
  * 短連結展開：把伺服器端才知道目標的短碼網址還原成真正的網址。
  *
  * 這是整個專案唯一會對外發出請求的模組——ClearURLs 的 redirections 規則只能處理
- * 「目標已內嵌在網址裡」的轉址，而 threads.com/share/<code> 的短碼不含任何目標資訊，
- * 純字串處理無解，只能問伺服器。
+ * 「目標已內嵌在網址裡」的轉址，而 threads.com/share/<code>、facebook.com/share/<code>
+ * 這類短碼不含任何目標資訊，純字串處理無解，只能問伺服器。
  *
  * 因此安全邊界全部集中在這裡：
  *   1. 只有命中 provider.pattern（錨定、網域寫死）的網址才會被 fetch，
@@ -27,11 +27,29 @@ export interface ShortLinkProvider {
 
 const THREADS_HOSTS: ReadonlySet<string> = new Set(['threads.com', 'www.threads.com', 'threads.net', 'www.threads.net'])
 
+const FACEBOOK_HOSTS: ReadonlySet<string> = new Set(['facebook.com', 'www.facebook.com', 'm.facebook.com'])
+
+/**
+ * 每個 provider 各自帶一份 allowedHosts，不共用一份大白名單——
+ * 合併的話，threads 的短連結就能被轉去 facebook.com（反之亦然），
+ * 而「這個短碼只能落在自己的網域」正是這道邊界要保證的事。
+ */
 export const SHORT_LINK_PROVIDERS: readonly ShortLinkProvider[] = [
   {
     name: 'threads',
     pattern: /^https:\/\/(?:www\.)?threads\.(?:com|net)\/share\/[A-Za-z0-9_-]+\/?$/i,
     allowedHosts: THREADS_HOSTS,
+  },
+  {
+    // 路徑中間可能多一段單字母類型（/share/p/、/share/v/、/share/r/、/share/g/），
+    // 實測同一個短碼在各類型下都能解出同一則貼文，該段只是分享來源的標記。
+    //
+    // web.facebook.com 刻意不收：它的第一跳會轉到 www 的**同一個短碼加上 ?_rdc=1&_rdr**，
+    // 帶了 query 就不再命中本樣式，逐跳迴圈會誤判成「已展開完成」而回傳一個仍是短連結的網址。
+    // 裸網域 facebook.com 則沒這個問題（301 到 www 的同一個短碼，乾淨無 query），故收。
+    name: 'facebook',
+    pattern: /^https:\/\/(?:www\.|m\.)?facebook\.com\/share\/(?:[a-z]\/)?[A-Za-z0-9_-]+\/?$/i,
+    allowedHosts: FACEBOOK_HOSTS,
   },
 ]
 
