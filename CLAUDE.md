@@ -69,7 +69,7 @@ data/rules.min.json + rules.local.json（bundle）→ compileRuleSet() → Compi
 SHORT_LINK_PROVIDERS + fetch → createShortLinkExpander() → ShortLinkExpander ────────────┘
 ```
 
-規則在模組載入時一次編譯成 `RegExp`（207 個 provider、1095 條 regex，實測約 2 ms），同一個 isolate 的所有請求共用。`createFetchHandler()` 接收 providers 與 expander 而非自己取得，測試才能塞自製規則集與假 fetch。新增依賴時沿用這個形式，不要在模組層級做額外 side effect。
+規則在模組載入時一次編譯成 `RegExp`（207 個 provider、1107 條 regex，實測約 2 ms），同一個 isolate 的所有請求共用。`createFetchHandler()` 接收 providers 與 expander 而非自己取得，測試才能塞自製規則集與假 fetch。新增依賴時沿用這個形式，不要在模組層級做額外 side effect。
 
 ### 清理演算法（`src/services/url.cleaner.ts`）
 
