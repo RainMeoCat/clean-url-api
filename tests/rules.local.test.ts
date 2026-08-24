@@ -90,3 +90,32 @@ describe('本地規則 — facebook', () => {
     expect(cleanUrl(input, providers)).toBe('https://www.facebook.com/p/1?locale=zh_TW')
   })
 })
+
+// 上游 instagram provider 只收了 igshid、igsh，不含分享連結另外帶的 igsi；
+// 本地這筆同樣是補充而非取代。igsi 的語意沒有公開文件可查，但 IG 貼文與 reel 的
+// permalink 不靠任何查詢參數解析，移除不影響連結指向。上游哪天收錄了就把本地這筆刪掉。
+describe('本地規則 — instagram', () => {
+  it('移除分享連結帶的 igsi', () => {
+    const input = 'https://www.instagram.com/p/ABC123/?igsi=1YmZlNzAwMDAwMA%3D%3D'
+
+    expect(cleanUrl(input, providers)).toBe('https://www.instagram.com/p/ABC123/')
+  })
+
+  it('與上游 instagram 規則並存，兩邊的參數一起移除', () => {
+    const input = 'https://www.instagram.com/reel/XYZ/?igsi=abc&igshid=def&utm_source=ig_web'
+
+    expect(cleanUrl(input, providers)).toBe('https://www.instagram.com/reel/XYZ/')
+  })
+
+  it('保留非追蹤參數', () => {
+    const input = 'https://www.instagram.com/p/ABC123/?igsi=abc&hl=zh-tw'
+
+    expect(cleanUrl(input, providers)).toBe('https://www.instagram.com/p/ABC123/?hl=zh-tw')
+  })
+
+  it('不影響其他網站同名的參數', () => {
+    const input = 'https://example.com/p?igsi=keep-me'
+
+    expect(cleanUrl(input, providers)).toBe(input)
+  })
+})

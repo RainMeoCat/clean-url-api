@@ -19,6 +19,10 @@
     "facebook": {
       "urlPattern": "^https?://(?:[a-z0-9-]+\\.)*?facebook\\.com",
       "rules": ["rdid", "share_url"]
+    },
+    "instagram": {
+      "urlPattern": "^https?://(?:[a-z0-9-]+\\.)*?instagram\\.com",
+      "rules": ["igsi"]
     }
   }
 }

@@ -35,7 +35,7 @@ CI（`.github/workflows/ci.yml`，每次 push）依序跑 `verify:rules` → `fo
 
 `data/rules.min.json` 是上游 ClearURLs 規則集的原始位元組副本，`data/rules.hash` 是它的 sha256。兩者一起進版控，且**必須同時更新**。
 
-`data/rules.local.json` 是本地規則擴充，補上游沒收錄的網站或沒收錄的參數（目前是 threads 與 facebook；facebook 上游已有同名 provider，本地這筆是補參數而非取代，兩者都會套用）。它不驗 sha256（本來就是我們自己的檔），但一樣會進 bundle，所以 `verify:rules` 會驗它能不能編譯。編譯順序**排在上游之後**，這個順序在 `src/worker/index.ts` 與 `rules.loader.ts` 的 `loadAllRules()` 各寫了一次，改一邊就要改另一邊——否則測試看到的 provider 會與線上不同。上游哪天補上同名 provider，把本地那筆刪掉即可。
+`data/rules.local.json` 是本地規則擴充，補上游沒收錄的網站或沒收錄的參數（目前是 threads、facebook 與 instagram；facebook 與 instagram 上游已有同名 provider，本地這兩筆是補參數而非取代，兩者都會套用）。它不驗 sha256（本來就是我們自己的檔），但一樣會進 bundle，所以 `verify:rules` 會驗它能不能編譯。編譯順序**排在上游之後**，這個順序在 `src/worker/index.ts` 與 `rules.loader.ts` 的 `loadAllRules()` 各寫了一次，改一邊就要改另一邊——否則測試看到的 provider 會與線上不同。上游哪天補上同名 provider，把本地那筆刪掉即可。
 
 - **絕對不要手動編輯 `data/rules.min.json` 與 `data/rules.hash`**。整個 `data/` 都不讓 formatter 碰（已在 `.prettierignore` / eslint ignores 排除），因為任何重新格式化都會使 sha256 驗證失敗。
 - 更新上游規則的唯一途徑是 `npm run vendor`（`scripts/vendor.sh`）：從 rules2/rules1 兩個來源擇一下載、驗 sha256、檢查結構（須含 `globalRules` provider），全部通過才寫檔。接著人工確認 `git diff --stat -- data/`、跑 `npm test`，再一起 commit。

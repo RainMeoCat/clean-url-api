@@ -38,7 +38,7 @@ Threads      https://www.threads.com/share/Fp3agZKiy/
 
 轉址解析涵蓋 Google、Facebook、YouTube、Instagram、Messenger、Reddit、eBay、Steam、Tumblr、VK、DuckDuckGo、Pocket、Adjust 等平台，以及 AWIN、Admitad、Tradedoubler、Skimlinks、VigLink、digidip、href.li 等聯盟／短連結服務。解出的目標**會再被完整清理一次**，巢狀轉址最多解 5 層。
 
-規則由 `data/rules.min.json` 驅動，未寫死在程式碼中；要更新時執行 `npm run vendor` 重新抓取官方規則，確認 diff 與測試後 commit 即生效。上游尚未收錄的網站則以 `data/rules.local.json` 補上（目前只有 Threads 的 `xmt`、`igshid`、`igsh`）。
+規則由 `data/rules.min.json` 驅動，未寫死在程式碼中；要更新時執行 `npm run vendor` 重新抓取官方規則，確認 diff 與測試後 commit 即生效。上游尚未收錄的網站或參數則以 `data/rules.local.json` 補上（目前有 Threads、Facebook、Instagram）。
 
 ### 短連結展開
 
