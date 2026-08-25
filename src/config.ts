@@ -14,14 +14,21 @@ export const MAX_URL_LENGTH = 8192
 /** 巢狀轉址的展開層數上限，防止惡意構造的無限轉址 */
 export const MAX_REDIRECTION_DEPTH = 5
 
-/** 短連結展開的單次請求逾時；外部服務再慢也不該拖垮這個 API */
-export const SHORTLINK_TIMEOUT_MS = 3000
+/**
+ * 一次短連結展開的**總**逾時預算，由所有跳數共用（不是每跳各給一份）。
+ *
+ * 實測從 Cloudflare colo 打到 Meta 單跳約 90–110 ms，1500 ms 已是十倍以上的餘裕；
+ * 留太多只會讓 Meta 出事時，使用者陪著一起等。展開失敗會沿用原網址繼續清理，
+ * 逾時的代價只是「少展開一個短連結」，不是請求失敗。
+ */
+export const SHORTLINK_TIMEOUT_MS = 1500
 
 /**
  * 短連結展開最多跟隨的轉址次數。
  *
- * 需要 2 是因為有些網域會先 301 到自己的正規網域、短碼原封不動，第二跳才是真正的目標：
- * threads.net → threads.com、facebook.com → www.facebook.com 都是這個形狀。
+ * 「先 301 到自己的正規網域、短碼原封不動」這個形狀（threads.net → www.threads.com、
+ * facebook.com → www.facebook.com）已由 shortlink.expander 的 hostAliases 在發請求前
+ * 純字串處理掉，正常路徑因此只需要一跳。維持 2 是留給上游哪天多插一層轉址的安全網。
  */
 export const MAX_SHORTLINK_HOPS = 2
 

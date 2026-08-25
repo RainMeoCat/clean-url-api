@@ -11,6 +11,9 @@
  *   2. redirect: 'manual'，逐跳自行驗證，每一跳的目標都必須是 https 且落在白名單網域。
  *   3. 有逾時、有跳數上限、不轉發呼叫端的任何標頭。
  *
+ * 發請求前會先套用 hostAliases 把主機名改寫成正規形式，省掉一整個來回；
+ * 改寫的落點一樣受 allowedHosts 約束，不會因為最佳化而擴大可達的網域。
+ *
  * 展開失敗一律回 null 而非拋錯：外部服務的狀態不該決定這個 API 的成敗，
  * 呼叫端沿用原網址繼續做字串清理即可。
  */
@@ -23,11 +26,31 @@ export interface ShortLinkProvider {
   readonly pattern: RegExp
   /** 每一跳的目標都必須落在其中，跳出白名單即視為展開失敗 */
   readonly allowedHosts: ReadonlySet<string>
+  /**
+   * 「非正規主機 → 正規主機」的別名表，發第一個請求前先套用。
+   *
+   * 只收實測會 301 到「同一個短碼、只換主機名」的主機：目標既然能純字串推導，
+   * 就不必花一整個來回去問伺服器。落點必須仍在 allowedHosts 內，
+   * 否則這個最佳化會繞過自己的 SSRF 邊界（由測試守著）。
+   */
+  readonly hostAliases: ReadonlyMap<string, string>
 }
 
 const THREADS_HOSTS: ReadonlySet<string> = new Set(['threads.com', 'www.threads.com', 'threads.net', 'www.threads.net'])
 
 const FACEBOOK_HOSTS: ReadonlySet<string> = new Set(['facebook.com', 'www.facebook.com', 'm.facebook.com'])
+
+const THREADS_HOST_ALIASES: ReadonlyMap<string, string> = new Map([
+  ['threads.com', 'www.threads.com'],
+  ['threads.net', 'www.threads.com'],
+  ['www.threads.net', 'www.threads.com'],
+])
+
+/**
+ * m.facebook.com 刻意不列入：它自己就直接回目標，而且目標留在 m. 網域，
+ * 改寫成 www 等於偷換使用者拿到的網址，那超出「移除追蹤碼」的範圍。
+ */
+const FACEBOOK_HOST_ALIASES: ReadonlyMap<string, string> = new Map([['facebook.com', 'www.facebook.com']])
 
 /**
  * 每個 provider 各自帶一份 allowedHosts，不共用一份大白名單——
@@ -39,6 +62,7 @@ export const SHORT_LINK_PROVIDERS: readonly ShortLinkProvider[] = [
     name: 'threads',
     pattern: /^https:\/\/(?:www\.)?threads\.(?:com|net)\/share\/[A-Za-z0-9_-]+\/?$/i,
     allowedHosts: THREADS_HOSTS,
+    hostAliases: THREADS_HOST_ALIASES,
   },
   {
     // 路徑中間可能多一段單字母類型（/share/p/、/share/v/、/share/r/、/share/g/），
@@ -50,12 +74,30 @@ export const SHORT_LINK_PROVIDERS: readonly ShortLinkProvider[] = [
     name: 'facebook',
     pattern: /^https:\/\/(?:www\.|m\.)?facebook\.com\/share\/(?:[a-z]\/)?[A-Za-z0-9_-]+\/?$/i,
     allowedHosts: FACEBOOK_HOSTS,
+    hostAliases: FACEBOOK_HOST_ALIASES,
   },
 ]
 
 const REDIRECT_STATUSES: ReadonlySet<number> = new Set([301, 302, 303, 307, 308])
 
 const HAS_SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i
+
+const HTTPS_PREFIX = 'https://'
+
+/**
+ * 套用主機名別名表，把網址改寫成正規主機。
+ *
+ * 只換主機名、其餘位元組原封不動——與 url.cleaner 同樣的理由：這裡不需要正規化網址，
+ * 只需要換掉一段已知等價的主機名，經 URL 重建反而會改動使用者網址的原始樣貌。
+ *
+ * 呼叫前 provider.pattern 已經命中，因此 https:// 前綴與其後的 / 都保證存在。
+ */
+function canonicalize(url: string, provider: ShortLinkProvider): string {
+  const pathStart = url.indexOf('/', HTTPS_PREFIX.length)
+  const canonical = provider.hostAliases.get(url.slice(HTTPS_PREFIX.length, pathStart).toLowerCase())
+
+  return canonical === undefined ? url : `${HTTPS_PREFIX}${canonical}${url.slice(pathStart)}`
+}
 
 /**
  * 驗證轉址目標並解析成絕對網址。
@@ -108,7 +150,11 @@ export function createShortLinkExpander(
       return null
     }
 
-    let current = url
+    // 整趟展開共用一份逾時預算。每跳各給一份的話，最壞情況會是「上限 × 跳數」，
+    // SHORTLINK_TIMEOUT_MS 就不再是「這次展開最多花多久」。
+    const signal = AbortSignal.timeout(SHORTLINK_TIMEOUT_MS)
+
+    let current = canonicalize(url, provider)
 
     for (let hop = 0; hop < MAX_SHORTLINK_HOPS; hop += 1) {
       let response: Response
@@ -120,7 +166,7 @@ export function createShortLinkExpander(
           method: 'GET',
           redirect: 'manual',
           headers: { 'user-agent': SHORTLINK_USER_AGENT },
-          signal: AbortSignal.timeout(SHORTLINK_TIMEOUT_MS),
+          signal,
         })
       } catch {
         // 逾時或網路錯誤：外部服務的問題不該讓請求失敗
@@ -144,7 +190,7 @@ export function createShortLinkExpander(
         return null
       }
 
-      // 目標不再是短連結就代表展開完成；仍是短連結則繼續跟（threads.net → threads.com）
+      // 目標不再是短連結就代表展開完成；仍是短連結則繼續跟
       if (!provider.pattern.test(target)) {
         return target
       }

@@ -91,12 +91,14 @@ exceptions → redirections → completeProvider → rawRules → rules
 
 ClearURLs 的 `redirections` 只能處理「目標已內嵌在網址裡」的轉址。`threads.com/share/<code>` 與 `facebook.com/share/<code>` 只有短碼，目標只有伺服器知道，所以這是**專案唯一會對外發請求的模組**。
 
-`SHORT_LINK_PROVIDERS` 是一組 provider，每筆各自帶 `pattern` 與 `allowedHosts`。**白名單刻意不共用一份大的**：合併的話 threads 的短碼就能被轉去 facebook.com（反之亦然），而「短碼只能落在自己的網域」正是這道邊界要保證的事。新增網站是往這個陣列加一筆，不是放寬既有那筆的 regex。
+`SHORT_LINK_PROVIDERS` 是一組 provider，每筆各自帶 `pattern`、`allowedHosts` 與 `hostAliases`。**白名單刻意不共用一份大的**：合併的話 threads 的短碼就能被轉去 facebook.com（反之亦然），而「短碼只能落在自己的網域」正是這道邊界要保證的事。新增網站是往這個陣列加一筆，不是放寬既有那筆的 regex。
 
 安全邊界全集中在這個檔案，改動時別打破：
 
 - **只有命中 `provider.pattern` 的網址才會被 fetch**。pattern 錨定且網域寫死，呼叫端無法藉此讓 Worker 去打任意位址——放寬成「看到網址就跟隨轉址」等於開一個 SSRF proxy。
-- `redirect: 'manual'` 逐跳自驗，每一跳的目標都必須是 https 且落在 `allowedHosts`；跳數上限 `MAX_SHORTLINK_HOPS`（2，因為有些網域會先 301 到自己的正規網域、短碼原封不動：threads.net → threads.com、facebook.com → www.facebook.com）。
+- **發第一個請求前先套 `hostAliases` 正規化主機名**。實測非正規主機都是 301 到「www 的同一個短碼」（`threads.com` / `threads.net` / `www.threads.net` → `www.threads.com`，裸 `facebook.com` → `www.facebook.com`），目標既然能純字串推導，就不必花一整個來回去問——實測省下約 110 ms。`m.facebook.com` 刻意不列入：它自己就直接回目標，且目標留在 `m.` 網域，改寫等於偷換使用者拿到的網址。別名的落點必須仍在 `allowedHosts` 內，否則這個最佳化會繞過自己的 SSRF 邊界，`tests/shortlink.expander.test.ts` 有一條不變式測試守著。
+- `redirect: 'manual'` 逐跳自驗，每一跳的目標都必須是 https 且落在 `allowedHosts`；跳數上限 `MAX_SHORTLINK_HOPS`（2。正規化之後正常路徑只需要一跳，維持 2 是留給上游哪天多插一層轉址的安全網）。
+- **逾時是整趟共用一份預算**，不是每跳各給一份（`SHORTLINK_TIMEOUT_MS` = 1500，實測從 CF colo 打到 Meta 單跳約 90–110 ms）。每跳各給一份的話最壞情況會是「上限 × 跳數」。
 - **UA 不能省略也不能偽裝成瀏覽器**：不帶 UA 會被 Threads 導去 `facebook.com/unsupportedbrowser`，完整瀏覽器 UA 則拿到 200 + JS 跳轉頁（頁面裡讀不到目標）。一般的非瀏覽器 UA 才會拿到帶 `Location` 的 302。
 - 用 `GET` 而非 `HEAD`：轉址回應 body 本來就 0 bytes，成本相同但相容性較好。
 - **展開失敗一律回 `null` 而非拋錯**，呼叫端沿用原網址繼續清理。外部服務的狀態不該決定這個 API 的成敗。

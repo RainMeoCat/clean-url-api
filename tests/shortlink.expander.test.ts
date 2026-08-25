@@ -51,12 +51,13 @@ describe('createShortLinkExpander — 只有命中樣式的網址會被 fetch', 
   it('認得 threads 的 /share/ 短連結（含無尾斜線與 threads.net）', async () => {
     const noSlash = 'https://www.threads.com/share/Fp3agZKiy'
     const netUrl = 'https://threads.net/share/Fp3agZKiy/'
-    const { expand, calls } = expanderFor({ [SHARE_URL]: TARGET_URL, [noSlash]: TARGET_URL, [netUrl]: TARGET_URL })
+    const { expand, calls } = expanderFor({ [SHARE_URL]: TARGET_URL, [noSlash]: TARGET_URL })
 
     expect(await expand(SHARE_URL)).toBe(TARGET_URL)
     expect(await expand(noSlash)).toBe(TARGET_URL)
     expect(await expand(netUrl)).toBe(TARGET_URL)
-    expect(calls.map(({ url }) => url)).toEqual([SHARE_URL, noSlash, netUrl])
+    // netUrl 在發請求前就被正規化成 www.threads.com 的同一個短碼，因此第三筆是 SHARE_URL
+    expect(calls.map(({ url }) => url)).toEqual([SHARE_URL, noSlash, SHARE_URL])
   })
 
   it('一般 threads 貼文、其他網站、缺短碼的路徑都不發請求', async () => {
@@ -85,11 +86,11 @@ describe('createShortLinkExpander — expand', () => {
     expect(await expand(SHARE_URL)).toBe(TARGET_URL)
   })
 
-  it('展開 threads.net 的短連結（先跳 threads.com 再跳目標）', async () => {
-    const netUrl = 'https://www.threads.net/share/Fp3agZKiy/'
-    const { expand, calls } = expanderFor({ [netUrl]: SHARE_URL, [SHARE_URL]: TARGET_URL })
+  it('轉址目標仍是短連結時繼續往下跟', async () => {
+    const hop = 'https://www.threads.com/share/bbbbbbbbb/'
+    const { expand, calls } = expanderFor({ [SHARE_URL]: hop, [hop]: TARGET_URL })
 
-    expect(await expand(netUrl)).toBe(TARGET_URL)
+    expect(await expand(SHARE_URL)).toBe(TARGET_URL)
     expect(calls).toHaveLength(2)
   })
 
@@ -195,12 +196,12 @@ describe('createShortLinkExpander — facebook', () => {
     expect(calls.map(({ url }) => url)).toEqual([typed, mobile, noSlash])
   })
 
-  it('裸網域 facebook.com 先跳 www 的同一個短碼，第二跳才是目標', async () => {
+  it('裸網域 facebook.com 在發請求前就被正規化成 www 的同一個短碼', async () => {
     const bare = 'https://facebook.com/share/1976XaXjie/'
-    const { expand, calls } = expanderFor({ [bare]: FB_SHARE, [FB_SHARE]: FB_TARGET })
+    const { expand, calls } = expanderFor({ [FB_SHARE]: FB_TARGET })
 
     expect(await expand(bare)).toBe(FB_TARGET)
-    expect(calls).toHaveLength(2)
+    expect(calls.map(({ url }) => url)).toEqual([FB_SHARE])
   })
 
   it('web.facebook.com 不在樣式內，連請求都不發', async () => {
@@ -223,5 +224,71 @@ describe('createShortLinkExpander — facebook', () => {
     const { expand } = expanderFor({ [FB_SHARE]: 'https://www.threads.com/@a/post/B' })
 
     expect(await expand(FB_SHARE)).toBeNull()
+  })
+})
+
+/**
+ * 主機名正規化：實測所有非正規主機都是 301 到「www 的同一個短碼」，
+ * 目標既然能純字串推導出來，就不必花一整個來回去問伺服器。
+ */
+describe('createShortLinkExpander — 主機名正規化', () => {
+  it('threads 的非正規主機直接改打 www.threads.com，不浪費第一跳', async () => {
+    const { expand, calls } = expanderFor({ [SHARE_URL]: TARGET_URL })
+
+    expect(await expand('https://threads.net/share/Fp3agZKiy/')).toBe(TARGET_URL)
+    expect(await expand('https://www.threads.net/share/Fp3agZKiy/')).toBe(TARGET_URL)
+    expect(await expand('https://threads.com/share/Fp3agZKiy/')).toBe(TARGET_URL)
+    expect(calls.map(({ url }) => url)).toEqual([SHARE_URL, SHARE_URL, SHARE_URL])
+  })
+
+  it('m.facebook.com 不改寫——它自己就回目標，改寫等於偷換使用者拿到的網域', async () => {
+    const mobile = 'https://m.facebook.com/share/1976XaXjie/'
+    const mobileTarget = 'https://m.facebook.com/100063463526923/posts/1686328943492540/'
+    const { expand, calls } = expanderFor({ [mobile]: mobileTarget })
+
+    expect(await expand(mobile)).toBe(mobileTarget)
+    expect(calls.map(({ url }) => url)).toEqual([mobile])
+  })
+
+  it('已經是正規主機的網址原樣送出', async () => {
+    const { expand, calls } = expanderFor({ [SHARE_URL]: TARGET_URL, [FB_SHARE]: FB_TARGET })
+
+    await expand(SHARE_URL)
+    await expand(FB_SHARE)
+    expect(calls.map(({ url }) => url)).toEqual([SHARE_URL, FB_SHARE])
+  })
+
+  it('主機名大小寫不影響正規化', async () => {
+    const { expand, calls } = expanderFor({ [SHARE_URL]: TARGET_URL })
+
+    expect(await expand('https://THREADS.NET/share/Fp3agZKiy/')).toBe(TARGET_URL)
+    expect(calls.map(({ url }) => url)).toEqual([SHARE_URL])
+  })
+
+  /**
+   * 正規化是在 SSRF 邊界「之前」改寫請求目標，因此別名的落點必須仍在白名單內，
+   * 否則「短碼只能落在自己的網域」這條保證會被自己的最佳化繞過。
+   */
+  it('每個別名的落點都仍在該 provider 的白名單內', () => {
+    for (const provider of SHORT_LINK_PROVIDERS) {
+      for (const canonical of provider.hostAliases.values()) {
+        expect(provider.allowedHosts.has(canonical)).toBe(true)
+      }
+    }
+  })
+})
+
+describe('createShortLinkExpander — 逾時預算', () => {
+  /**
+   * 每跳各給一份逾時的話，最壞情況是「上限 × 跳數」；整趟共用同一個 signal，
+   * SHORTLINK_TIMEOUT_MS 才真的是「這次展開最多花多久」。
+   */
+  it('整趟展開共用同一個 AbortSignal，而不是每跳各給一份', async () => {
+    const hop = 'https://www.threads.com/share/bbbbbbbbb/'
+    const { expand, calls } = expanderFor({ [SHARE_URL]: hop, [hop]: TARGET_URL })
+
+    expect(await expand(SHARE_URL)).toBe(TARGET_URL)
+    expect(calls).toHaveLength(2)
+    expect(calls[0]?.init?.signal).toBe(calls[1]?.init?.signal)
   })
 })
