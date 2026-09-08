@@ -1,5 +1,6 @@
-import { validateSingleUrl } from '../services/clean.service.js'
-import { InvalidUrlError, cleanUrl } from '../services/url.cleaner.js'
+import { MAX_TEXT_LENGTH } from '../config.js'
+import { textTooLongError, validateText } from '../services/clean.service.js'
+import { cleanText } from '../services/text.cleaner.js'
 import type { ShortLinkExpander } from '../services/shortlink.expander.js'
 import type { CompiledProvider } from '../types/clearurls.js'
 
@@ -9,13 +10,22 @@ export interface WorkerEnv {
 }
 
 const BASE_HEADERS: Record<string, string> = {
-  'content-type': 'application/json; charset=utf-8',
   'x-content-type-options': 'nosniff',
   'referrer-policy': 'no-referrer',
 }
 
 function json(status: number, body: unknown, headers: Record<string, string> = {}): Response {
-  return new Response(JSON.stringify(body), { status, headers: { ...BASE_HEADERS, ...headers } })
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...BASE_HEADERS, 'content-type': 'application/json; charset=utf-8', ...headers },
+  })
+}
+
+function plainText(body: string): Response {
+  return new Response(body, {
+    status: 200,
+    headers: { ...BASE_HEADERS, 'content-type': 'text/plain; charset=utf-8' },
+  })
 }
 
 /**
@@ -31,26 +41,28 @@ function isMountPath(pathname: string, mountPath: string): boolean {
  * 模組本身不做任何取得依賴的 side effect。
  */
 export function createFetchHandler(providers: CompiledProvider[], expander: ShortLinkExpander) {
-  async function cleanOne(req: Request): Promise<Response> {
-    const validation = validateSingleUrl(new URL(req.url).searchParams.get('url'))
+  async function cleanBody(req: Request): Promise<Response> {
+    // content-length 是位元組數、MAX_TEXT_LENGTH 是字元數，單位不同，兩者不能直接比。
+    // 這裡只擋「必定超長」的請求：UTF-8 對每個 UTF-16 code unit 最多 3 位元組
+    // （BMP 是 3 bytes/1 unit，星光平面 4 bytes/2 units = 2），位元組數超過 MAX_TEXT_LENGTH * 3
+    // 才可能字元數超標。權威檢查在 validateText（讀完 body 後）——預檢只是省下必死請求的讀取，
+    // 收得比權威檢查寬是刻意的：直接拿位元組數比字元上限會誤擋中文
+    // （中文 32768 字是 98304 bytes，恰等於 32768 * 3，必須放行）。
+    const declared = req.headers.get('content-length')
+
+    if (declared !== null && Number(declared) > MAX_TEXT_LENGTH * 3) {
+      return json(413, { error: textTooLongError() })
+    }
+
+    const validation = validateText(await req.text())
 
     if (!validation.ok) {
-      return json(400, { error: validation.error })
+      return json(validation.status, { error: validation.error })
     }
 
-    // 展開失敗（含逾時、查無短碼）回 null，沿用原網址繼續清理——
-    // Threads 的狀態不該決定這個 API 的成敗。非短連結不會發出任何請求。
-    const target = (await expander.expand(validation.value)) ?? validation.value
-
-    try {
-      return json(200, { url: cleanUrl(target, providers) })
-    } catch (error) {
-      // 沒有 middleware 可以攔截，就地把領域錯誤轉成 400；其餘往外拋交給 runtime
-      if (error instanceof InvalidUrlError) {
-        return json(400, { error: error.message })
-      }
-      throw error
-    }
+    // 單一 token 的所有失敗（InvalidUrlError、completeProvider、超長、展開失敗）
+    // 都已在 cleanText 內降級成原樣保留，不會走到這裡
+    return plainText(await cleanText(validation.value, providers, expander))
   }
 
   return async function handleRequest(req: Request, env: WorkerEnv): Promise<Response> {
@@ -60,10 +72,10 @@ export function createFetchHandler(providers: CompiledProvider[], expander: Shor
       return json(404, { error: `找不到 ${req.method} ${pathname}` })
     }
 
-    if (req.method === 'GET') {
-      return cleanOne(req)
+    if (req.method === 'POST') {
+      return cleanBody(req)
     }
 
-    return json(405, { error: `不支援 ${req.method}` }, { allow: 'GET' })
+    return json(405, { error: `不支援 ${req.method}` }, { allow: 'POST' })
   }
 }

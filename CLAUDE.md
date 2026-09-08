@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 專案概觀
 
-依 [ClearURLs](https://github.com/ClearURLs/Rules) 規則集移除網址追蹤碼的 Cloudflare Worker。TypeScript ESM，執行期相依為零（`dependencies` 是空的），開發工具鏈需要 Node >= 22。
+依 [ClearURLs](https://github.com/ClearURLs/Rules) 規則集移除網址追蹤碼的 Cloudflare Worker。接收**整段文字**，只清理其中的網址、其餘位元組原樣返回。TypeScript ESM，執行期相依為零（`dependencies` 是空的），開發工具鏈需要 Node >= 22。
 
 ## 常用指令
 
@@ -52,8 +52,8 @@ CI（`.github/workflows/ci.yml`，每次 push）依序跑 `verify:rules` → `fo
 模組因此分成兩群：
 
 ```
-Worker 可達      config.ts, types/, services/{url.cleaner, rules.compiler, clean.service,
-                 shortlink.expander}, worker/
+Worker 可達      config.ts, types/, services/{url.extractor, text.cleaner, url.cleaner,
+                 rules.compiler, clean.service, shortlink.expander}, worker/
 只在 build 時跑  config.node.ts, services/rules.loader.ts, scripts/verify-rules.ts
 ```
 
@@ -69,7 +69,7 @@ data/rules.min.json + rules.local.json（bundle）→ compileRuleSet() → Compi
 SHORT_LINK_PROVIDERS + fetch → createShortLinkExpander() → ShortLinkExpander ────────────┘
 ```
 
-規則在模組載入時一次編譯成 `RegExp`（208 個 provider、1110 條 regex，實測約 2 ms），同一個 isolate 的所有請求共用。`createFetchHandler()` 接收 providers 與 expander 而非自己取得，測試才能塞自製規則集與假 fetch。新增依賴時沿用這個形式，不要在模組層級做額外 side effect。
+規則在模組載入時一次編譯成 `RegExp`（209 個 provider、903 條 regex，實測約 2 ms），同一個 isolate 的所有請求共用。`createFetchHandler()` 接收 providers 與 expander 而非自己取得，測試才能塞自製規則集與假 fetch。新增依賴時沿用這個形式，不要在模組層級做額外 side effect。
 
 ### 清理演算法（`src/services/url.cleaner.ts`）
 
@@ -87,6 +87,21 @@ exceptions → redirections → completeProvider → rawRules → rules
 - **`referralMarketing` 與 `rules` 合併**一併移除，本 API 不保留聯盟參數。
 - 轉址目標解出後會**遞迴呼叫 `cleanUrl()` 再清一次**，深度上限 `MAX_REDIRECTION_DEPTH`（5）。
 
+### 文字模式（`src/services/text.cleaner.ts` + `src/services/url.extractor.ts`）
+
+`cleanText()` 的資料流：`extractUrls()` 找出所有網址 token（`{ start, end, url }`）→ `expandFirst()`（最多一次展開）→ 逐 token `cleanUrl()` → **由後往前**依 offset 重建文字。由後往前的理由：替換會改變字串長度，從尾端做就不必重算前面 token 的 offset。核心不變式：**非網址的位元組完全不動**，有測試守著。
+
+`extractUrls()`（方案 A）的邊界規則：
+
+- 掃描 `https?://`（不分大小寫），找到後**下一次搜尋從該網址的 end 繼續**——巢狀轉址網址（`https://a.com/r?u=http://b.com`）若被拆成兩個 token，內層目標會繞過外層轉址規則的遞迴清理，那是 `cleanUrl` 的職責，extractor 不插手。
+- 往後讀到**終止字元**即停：任何空白（`\s` 已涵蓋全形空白 U+3000）、全形／CJK 標點、ASCII 的 `< > " '` 反引號。**CJK 文字本身不是終止符，但全形標點是**——這兩件事必須分開：把 CJK 當終止符會截斷 `zh.wikipedia.org/wiki/臺灣`，不把全形標點當終止符則 `https://example.com/p。然後…` 會被誤收。
+- **`)` `]` `}` 只在不配對時剝除**（從 token 起點算起，關閉數多於開啟數才剝，迭代到穩定）。這同時處理兩個相反的形狀：維基百科 `Foo_(bar)`（配對 → 不剝）與 markdown `[文字](https://…)`（不配對 → 剝）。剝除的括號計數先一次掃描統計、剝除時只遞減——每剝一個就重掃整個 token 會在最壞情況退化成 O(n²)。
+- `https://` 後緊接終止字元或字串結尾（無任何主機字元，含主體全被尾端剝除剝光的情況）→ 不視為網址。
+
+已知限制：`看這個https://example.com/p很有趣`——網址與 CJK 文字完全沒有空白或標點分隔時會誤收，沒有分隔就沒有邊界（除非引入斷詞）。`tests/url.extractor.test.ts` 有一條測試**斷言目前的誤收行為**並註明它描述的是限制而非期望，不要順手「修好」。其餘已知限制：一個請求只展開第一個命中的短連結（見下節）；第一個命中者展開失敗時不改試第二個（名額已用盡）。
+
+錯誤處理與單一網址模式相反：**單一 token 出問題絕不讓整個請求失敗**——一篇文章裡有一個怪東西，不該讓其餘三千字白跑。四種降級（`cleanUrl` 丟 `InvalidUrlError` 時原樣保留、`completeProvider` 命中原樣保留、超過 `MAX_URL_LENGTH` 的 token 原樣保留不套規則、短連結展開失敗沿用原網址）都在 `text.cleaner.ts`，因此 4xx 只剩 405、404、空 body、超長四種。網址數量刻意不設上限：實測每個網址跑完全部 provider 平均 0.015 ms、800 個約 12 ms CPU，封住 CPU 的是 `MAX_TEXT_LENGTH`，少一個常數與一條程式路徑。
+
 ### 短連結展開（`src/services/shortlink.expander.ts`）
 
 ClearURLs 的 `redirections` 只能處理「目標已內嵌在網址裡」的轉址。`threads.com/share/<code>` 與 `facebook.com/share/<code>` 只有短碼，目標只有伺服器知道，所以這是**專案唯一會對外發請求的模組**。
@@ -103,7 +118,9 @@ ClearURLs 的 `redirections` 只能處理「目標已內嵌在網址裡」的轉
 - 用 `GET` 而非 `HEAD`：轉址回應 body 本來就 0 bytes，成本相同但相容性較好。
 - **展開失敗一律回 `null` 而非拋錯**，呼叫端沿用原網址繼續清理。外部服務的狀態不該決定這個 API 的成敗。
 
-一個請求最多展開一次（API 只接收一個網址），所以沒有展開數量的上限要管。目前也沒有做快取——Threads 回 `cache-control: private, no-cache`，要快取得自己用 Cache API，有量再說。
+一個請求最多展開一次，這是**刻意設的上限**而非輸入形狀的自然結果：一篇貼滿分享連結的文章否則能把這個 API 變成對 Meta 的請求放大器，而 WAF 的 rate limit 算的是請求數，擋不到「一請求對多 fetch」。上限由 `expandFirst()` 內部守著——**第一個命中 `provider.pattern` 的網址就用盡名額**，即使展開失敗也不往下找；若只開單網址的 `expand()` 讓呼叫端逐個試到非 null 才停，「命中但失敗」會回 null 於是往下試，上限形同虛設。因此公開介面只有 `expandFirst(urls)`，呼叫端（`text.cleaner`）一次把整個 token 陣列交進去、只知道「第幾個 token 該換成什麼」，白名單判斷仍然只有一份。**這個不變式守的是展開次數，不是 fetch 次數**：每個請求最多只發生一次展開，一次展開的逐跳迴圈每跳一次 fetch，對外請求次數因此恆 ≤ `MAX_SHORTLINK_HOPS`（2），而不是 ≤ 1。`tests/worker.shortlink.test.ts` 有「命中但失敗不往下找（展開次數 ≤ 1）」的守門測試。
+
+目前沒有做快取——Threads 回 `cache-control: private, no-cache`，要快取得自己用 Cache API，有量再說。
 
 已知限制：`web.facebook.com` 的短連結不展開。它的第一跳會轉到 www 的**同一個短碼再加上 `?_rdc=1&_rdr`**，帶了 query 就不再命中樣式，逐跳迴圈會誤判成「已展開完成」而回傳一個仍是短連結的網址。要支援它就得讓樣式接受 query，那會同時放寬「夾帶查詢字串的假短連結不發請求」這條界線，不划算——FB App 產生的分享連結是 www／m／裸網域，都已涵蓋。
 
@@ -111,12 +128,12 @@ ClearURLs 的 `redirections` 只能處理「目標已內嵌在網址裡」的轉
 
 `src/services/clean.service.ts` 定義請求驗證——錯誤訊息與「什麼算不合法」都在這裡，`worker/handler.ts` 只負責轉成 `Response`。要改訊息或上限就改這個檔案。
 
-**這個 API 只接收一個網址、回傳一個網址**，唯一的入口是 `GET ?url=`。批次（`POST { urls: [...] }`）已刻意移除：單一網址用查詢參數就夠，多一條入口就多一組驗證路徑與成本模型要維護。要重新加回批次前，先確認呼叫端真的無法自己發 N 個請求。
+**這個 API 接收整段文字、回傳整段文字**，唯一的入口是 `POST`（body 為純文字，Content-Type 不檢查）。曾經的 `GET ?url=`（單一網址進出）與更早的批次 `POST { urls: [...] }` 都已刻意移除：中文經 URL 編碼後一個字變 9 個字元（`一` → `%E4%B8%80`），GET 的長度限制裝不下整段文章，而整段文章寫進 URL 還會被各層中介與存取日誌記下；批次則呼叫端自己發 N 個請求就辦得到。要重新加回任何一種前，先確認呼叫端真的無法自行達成。
 
-- 成功一律 200，只回清理後的字串（`{ url }`），不附比對細節。
-- 錯誤一律 4xx，格式 `{ "error": "訊息" }`。
-- `completeProvider` 命中回空字串，代表該網址沒有乾淨版本——這不是錯誤。
-- 掛載路徑以外的子路徑回 404，非 GET 回 405（帶 `Allow: GET`）。
+- 成功一律 200，回 `text/plain; charset=utf-8` 的整段文字，**不包 JSON**：iOS 捷徑直接把剪貼簿丟進 body、回應直接貼回去，全程不碰 JSON，也不必擔心引號、換行、emoji 被轉義弄壞。
+- 錯誤一律 4xx，格式 `{ "error": "訊息" }`，刻意與成功不同格式——捷徑失敗時貼出來的是看得懂的錯誤訊息，而不是一段被清理過的原文。
+- 4xx 只剩四種：405（非 POST，帶 `Allow: POST`）、404（掛載路徑以外）、400（空 body）、413（超過 `MAX_TEXT_LENGTH`；`content-length` 超標時**不讀 body** 就擋下，chunked 讀完後再檢一次）。單一網址 token 的所有問題都在 `text.cleaner.ts` 降級原樣保留，不產生 4xx（見「文字模式」）。
+- `completeProvider` 命中不回空字串而是**原樣保留**：誤判時「刪除」是靜默的資料遺失（貼出去才發現少東西、且不知道少在哪），「保留」只是看得見的一個廣告網址。
 
 ### 掛載路徑與節流
 
@@ -128,7 +145,7 @@ ClearURLs 的 `redirections` 只能處理「目標已內嵌在網址裡」的轉
 
 ### 設定
 
-所有上限集中在 `src/config.ts`（`MAX_URL_LENGTH`、`MAX_REDIRECTION_DEPTH`、`SHORTLINK_TIMEOUT_MS`、`MAX_SHORTLINK_HOPS`、`SHORTLINK_USER_AGENT`）。`src/config.node.ts` 只有規則檔路徑（`RULES_PATH`、`RULES_HASH_PATH`，可用同名環境變數覆寫，測試以此指向 fixture）。
+所有上限集中在 `src/config.ts`（`MAX_TEXT_LENGTH` 整段文字長度、`MAX_URL_LENGTH` 單一網址 token 長度——超過原樣保留不套規則、`MAX_REDIRECTION_DEPTH`、`SHORTLINK_TIMEOUT_MS`、`MAX_SHORTLINK_HOPS`、`SHORTLINK_USER_AGENT`）。`src/config.node.ts` 只有規則檔路徑（`RULES_PATH`、`RULES_HASH_PATH`，可用同名環境變數覆寫，測試以此指向 fixture）。
 
 ## 慣例
 

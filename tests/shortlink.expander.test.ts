@@ -39,7 +39,12 @@ function createFakeFetch(routes: Record<string, string | number>) {
 function expanderFor(routes: Record<string, string | number>) {
   const { impl, calls } = createFakeFetch(routes)
   const expander = createShortLinkExpander(SHORT_LINK_PROVIDERS, impl)
-  return { expand: (url: string) => expander.expand(url), calls }
+  return {
+    /** 單一網址的測試一律以長度 1 的陣列呼叫，與正式呼叫端（文字模式）同形 */
+    expand: (url: string) => expander.expandFirst([url]).then((r) => r?.url ?? null),
+    expandFirst: (urls: readonly string[]) => expander.expandFirst(urls),
+    calls,
+  }
 }
 
 /**
@@ -79,11 +84,11 @@ describe('createShortLinkExpander — 只有命中樣式的網址會被 fetch', 
   })
 })
 
-describe('createShortLinkExpander — expand', () => {
-  it('把 threads /share/ 短連結展開成 Location 指向的目標', async () => {
-    const { expand } = expanderFor({ [SHARE_URL]: TARGET_URL })
+describe('createShortLinkExpander — expandFirst（單一網址）', () => {
+  it('把 threads /share/ 短連結展開成 Location 指向的目標，並回報其位置', async () => {
+    const { expandFirst } = expanderFor({ [SHARE_URL]: TARGET_URL })
 
-    expect(await expand(SHARE_URL)).toBe(TARGET_URL)
+    expect(await expandFirst([SHARE_URL])).toEqual({ index: 0, url: TARGET_URL })
   })
 
   it('轉址目標仍是短連結時繼續往下跟', async () => {
@@ -117,7 +122,11 @@ describe('createShortLinkExpander — expand', () => {
   it('轉址回應缺少 Location 標頭時視為展開失敗', async () => {
     const impl = (() => Promise.resolve(new Response(null, { status: 302 }))) as unknown as typeof fetch
 
-    expect(await createShortLinkExpander(SHORT_LINK_PROVIDERS, impl).expand(SHARE_URL)).toBeNull()
+    expect(
+      await createShortLinkExpander(SHORT_LINK_PROVIDERS, impl)
+        .expandFirst([SHARE_URL])
+        .then((r) => r === null)
+    ).toBe(true)
   })
 
   it('Location 無法解析成網址時視為展開失敗', async () => {
@@ -146,7 +155,7 @@ describe('createShortLinkExpander — expand', () => {
     const impl = (() =>
       Promise.reject(new DOMException('The operation was aborted', 'TimeoutError'))) as unknown as typeof fetch
 
-    expect(await createShortLinkExpander(SHORT_LINK_PROVIDERS, impl).expand(SHARE_URL)).toBeNull()
+    expect(await createShortLinkExpander(SHORT_LINK_PROVIDERS, impl).expandFirst([SHARE_URL])).toBeNull()
   })
 
   it('以相對路徑回應的 Location 會依當前網址解析', async () => {

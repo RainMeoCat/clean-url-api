@@ -2,7 +2,7 @@
 
 依 [ClearURLs](https://github.com/ClearURLs/Rules) 規則集移除網址追蹤碼的 Cloudflare Worker。
 
-丟一個網址進來，回傳乾淨的網址：拿掉追蹤參數、聯盟行銷碼與站台專屬的追蹤片段；若是廣告轉址網址，直接解出它真正指向的目標；若是 Threads 的分享短連結，先向它問出真正的網址再清理。
+貼上一整段文字，回傳把網址清乾淨後的同一份文字：拿掉追蹤參數、聯盟行銷碼與站台專屬的追蹤片段；若是廣告轉址網址，直接解出它真正指向的目標；若是 Threads 的分享短連結，先向它問出真正的網址再清理。文字中的其餘內容——中文、emoji、換行——原樣保留。
 
 ## 能做什麼
 
@@ -45,40 +45,44 @@ Threads      https://www.threads.com/share/Fp3agZKiy/
 多數轉址網址把目標內嵌在網址裡（如 `google.com/url?q=...`），純字串處理就能解出。但 Threads 的分享短連結 `threads.com/share/<code>` 只有一組短碼，目標只存在伺服器端，因此這類網址會**實際發出一次請求**取得 `Location` 再清理。
 
 - 只有明確命中白名單樣式的網址會觸發外部請求，其餘網址一律純字串處理、不連外。
+- 一個請求最多展開**第一個命中**的短連結（刻意設的上限，避免一篇貼滿分享連結的文章讓這個 API 變成對 Meta 的請求放大器）。
 - 展開失敗（查無短碼、逾時、目標跳出白名單）不算錯誤，會回退成只做字串清理並照樣回 `200`。
 
 ## API 使用方式
 
-一次接收一個網址、回傳一個網址，只支援 `GET`。線上位址是 `https://rainmeocat.com/api/clean-url`；以下範例以本機 `wrangler dev`（`http://localhost:8787/api/clean-url`）為主，換成線上網域即可。
+接收整段文字、回傳整段文字，只支援 `POST`。線上位址是 `https://rainmeocat.com/api/clean-url`；以下範例以本機 `wrangler dev`（`http://localhost:8787/api/clean-url`）為主，換成線上網域即可。
 
-### `GET`
+### `POST`
 
-| 參數  | 說明                        |
-| ----- | --------------------------- |
-| `url` | 要清理的網址（需 URL 編碼） |
+把整段文字放進 body（Content-Type 不檢查，一律當純文字讀）：
 
 ```bash
-curl -s 'http://localhost:8787/api/clean-url?url=https%3A%2F%2Fexample.com%2Fp%3Fid%3D5%26utm_source%3Dnewsletter%26fbclid%3Dabc'
+printf '看這個 https://example.com/p?id=5&utm_source=newsletter\n分享 https://www.threads.com/share/Fp3agZKiy/ 請看。' \
+  | curl -s --data-binary @- http://localhost:8787/api/clean-url
 ```
 
-```json
-{ "url": "https://example.com/p?id=5" }
+回應為 `text/plain; charset=utf-8` 的整段文字，網址已清理、其餘位元組不變：
+
+```
+看這個 https://example.com/p?id=5
+分享 https://www.threads.com/@amtb4818/post/DcIG72GFE5W 請看。
 ```
 
 ### 回應約定
 
-- 成功一律 `200`，只回傳清理後的字串，不附帶比對細節。
-- 錯誤一律 `4xx`，格式為 `{ "error": "訊息" }`。
-- 整個網址本身即追蹤／廣告網址時回傳空字串，代表它沒有乾淨版本。
-- 掛載路徑以外的子路徑回 `404`，`GET` 以外的 method 回 `405`（帶 `Allow: GET`）。
+- 成功一律 `200`，回傳 `text/plain` 的整段文字，不包 JSON——捷徑可以直接把剪貼簿丟進 body、回應直接貼回去。
+- 錯誤一律 `4xx`，格式為 `{ "error": "訊息" }`（刻意與成功不同格式，失敗時貼出來的是看得懂的錯誤訊息）。
+- 錯誤只有四種：非 `POST` 回 `405`（帶 `Allow: POST`）、掛載路徑以外回 `404`、空 body 回 `400`、超過文字長度上限回 `413`。
+- 文字裡的單一網址出問題（不合法、整個是廣告網址、超長、短連結展開失敗）一律**原樣保留**，不讓整個請求失敗。
 
 ### 限制
 
-| 項目             | 上限      |
-| ---------------- | --------- |
-| 單一網址長度     | 8192 字元 |
-| 巢狀轉址展開層數 | 5 層      |
-| 短連結展開逾時   | 3 秒      |
+| 項目             | 上限                                      |
+| ---------------- | ----------------------------------------- |
+| 整段文字長度     | 32768 字元                                |
+| 單一網址長度     | 8192 字元（超過的網址原樣保留，不套規則） |
+| 巢狀轉址展開層數 | 5 層                                      |
+| 短連結展開逾時   | 1.5 秒                                    |
 
 速率限制不在程式碼裡，由 Cloudflare WAF 負責。
 

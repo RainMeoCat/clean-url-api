@@ -121,15 +121,29 @@ function resolveTarget(location: string, current: string, provider: ShortLinkPro
   return HAS_SCHEME.test(location) ? location : target.href
 }
 
+export interface ExpandedShortLink {
+  /** 該短連結在輸入陣列中的位置 */
+  readonly index: number
+  readonly url: string
+}
+
 export interface ShortLinkExpander {
   /**
-   * 展開後的網址；不是短連結或展開失敗時為 null。
+   * 從一串網址中挑第一個命中的短連結並展開；index 是它在輸入陣列中的位置。
+   * 全部沒命中或展開失敗時為 null。
    *
-   * 「是不是短連結」刻意不另外開一個 matches()：呼叫端一律無條件呼叫 expand()，
-   * 由這裡的 provider 判斷決定要不要發請求。少一個公開判斷式，就少一個
-   * 「先問過再展開」與「直接展開」判斷不一致的機會。
+   * 介面是「一次進整個列表」而非單一網址：「一請求最多一次展開」的上限要在這裡守。
+   * 若只開單網址的 expand()，呼叫端逐個試到非 null 才停——
+   * 「命中但展開失敗」回 null，於是往下試下一個，一篇貼滿分享連結的文章
+   * 照樣能誘發 N 次展開，上限形同虛設。把「挑第一個」的責任搬進來後，
+   * 白名單判斷仍然只有一份、仍然只在這個檔案裡，呼叫端只知道「第幾個 token 該換成什麼」；
+   * 對外請求次數因此恆 ≤ MAX_SHORTLINK_HOPS（一次展開的逐跳迴圈每跳一次 fetch），
+   * 而不是 ≤ 1。
+   *
+   * 「是不是短連結」因此也刻意不另外開一個 matches()：呼叫端連問都問不到，
+   * 由這裡的 provider 判斷獨自決定要不要發請求。
    */
-  expand(url: string): Promise<string | null>
+  expandFirst(urls: readonly string[]): Promise<ExpandedShortLink | null>
 }
 
 /**
@@ -201,5 +215,21 @@ export function createShortLinkExpander(
     return null
   }
 
-  return { expand }
+  return {
+    async expandFirst(urls) {
+      for (const [index, url] of urls.entries()) {
+        if (providerFor(url) === undefined) {
+          continue
+        }
+
+        // 第一個命中樣式的網址就用盡名額：即使展開失敗也不往下找。
+        // 若失敗時改試下一個，「一請求最多一次 fetch」就會被一篇貼滿
+        // 查無短碼之分享連結的文章繞過。
+        const expanded = await expand(url)
+        return expanded === null ? null : { index, url: expanded }
+      }
+
+      return null
+    },
+  }
 }

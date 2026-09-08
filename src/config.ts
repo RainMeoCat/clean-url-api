@@ -8,8 +8,19 @@
  * 它跑在 Worker 之前，被擋下的請求不會進到這份程式碼，也不計入 Worker 用量。
  */
 
-/** 單一網址長度上限，避免對超長輸入套用整組 regex */
+/**
+ * 單一網址 token 的長度上限，避免對超長輸入套用整組 regex——
+ * 文字模式下超過的 token 原樣保留、不套規則，因此這也是唯一還需要防 regex 回溯的地方。
+ */
 export const MAX_URL_LENGTH = 8192
+
+/**
+ * 整段文字的長度上限（字元數；中文以 UTF-8 編碼最壞約 96 KB，足夠一整篇貼文）。
+ *
+ * 文字的網址數量不設上限：實測每個網址跑完全部 provider 平均 0.015 ms，
+ * 800 個網址約 12 ms CPU，真正封住 CPU 的就是這個值。
+ */
+export const MAX_TEXT_LENGTH = 32768
 
 /** 巢狀轉址的展開層數上限，防止惡意構造的無限轉址 */
 export const MAX_REDIRECTION_DEPTH = 5
